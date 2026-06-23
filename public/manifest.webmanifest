@@ -1,0 +1,17 @@
+{
+  "name": "Organizer2 – Arbeits-Assistent",
+  "short_name": "Organizer2",
+  "description": "Todos strukturieren, priorisieren und Reminder verwalten – mit KI-Anbindung an Mail, Teams, JIRA und Freshdesk.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1419",
+  "theme_color": "#1f2933",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

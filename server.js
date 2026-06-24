@@ -1,3 +1,4 @@
+import './src/proxy.js'; // muss vor den ersten Netzwerkaufrufen geladen werden
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

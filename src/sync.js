@@ -63,8 +63,11 @@ export async function runSync({ only } = {}) {
           result.bySource[integ.id].created++;
         }
       } catch (err) {
-        console.error(`[sync] ${integ.id}: ${err.message}`);
-        result.errors.push({ source: integ.id, message: err.message });
+        // Bei Netzwerkfehlern (z.B. "fetch failed") steht der eigentliche Grund in err.cause
+        const cause = err.cause ? ` (Ursache: ${err.cause.code || ''} ${err.cause.message || err.cause})`.trimEnd() : '';
+        const message = `${err.message}${cause}`;
+        console.error(`[sync] ${integ.id}: ${message}`);
+        result.errors.push({ source: integ.id, message });
       }
     }
 

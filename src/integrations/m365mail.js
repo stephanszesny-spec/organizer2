@@ -1,6 +1,6 @@
 import { Integration } from './base.js';
 import { config } from '../config.js';
-import { describeError } from '../util.js';
+import { describeError, parseJsonResponse } from '../util.js';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
@@ -38,7 +38,7 @@ export class M365MailIntegration extends Integration {
       body,
     });
     if (!res.ok) throw new Error(`M365 Token-Fehler ${res.status}: ${await res.text()}`);
-    const json = await res.json();
+    const json = await parseJsonResponse(res);
     this._token = json.access_token;
     this._tokenExp = Date.now() + json.expires_in * 1000;
     return this._token;
@@ -48,7 +48,7 @@ export class M365MailIntegration extends Integration {
     const token = await this._getToken();
     const res = await fetch(`${GRAPH}${pathname}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) throw new Error(`Graph-Fehler ${res.status} (${pathname}): ${await res.text()}`);
-    return res.json();
+    return parseJsonResponse(res);
   }
 
   async testConnection() {

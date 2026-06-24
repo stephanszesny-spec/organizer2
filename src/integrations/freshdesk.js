@@ -1,6 +1,6 @@
 import { Integration } from './base.js';
 import { config } from '../config.js';
-import { describeError } from '../util.js';
+import { describeError, parseJsonResponse } from '../util.js';
 
 /**
  * Freshdesk via REST API v2 (Basic Auth: API-Key als Username, "X" als Passwort).
@@ -33,7 +33,7 @@ export class FreshdeskIntegration extends Integration {
       if (!res.ok) {
         return { ok: false, configured: true, status: res.status, message: `Freshdesk-Fehler ${res.status}: ${(await res.text()).slice(0, 200)}` };
       }
-      const me = await res.json();
+      const me = await parseJsonResponse(res);
       return { ok: true, configured: true, message: `OK – Agent: ${me.contact?.name || me.contact?.email || me.id}` };
     } catch (err) {
       return { ok: false, configured: true, message: describeError(err) };
@@ -49,7 +49,7 @@ export class FreshdeskIntegration extends Integration {
       headers: { Authorization: this._authHeader(), 'Content-Type': 'application/json' },
     });
     if (!res.ok) throw new Error(`Freshdesk-Fehler ${res.status}: ${await res.text()}`);
-    const tickets = await res.json();
+    const tickets = await parseJsonResponse(res);
     return (tickets || []).map((t) => ({
       id: `freshdesk:${t.id}`,
       source: 'freshdesk',

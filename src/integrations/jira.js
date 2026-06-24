@@ -1,6 +1,6 @@
 import { Integration } from './base.js';
 import { config } from '../config.js';
-import { describeError } from '../util.js';
+import { describeError, parseJsonResponse } from '../util.js';
 
 /**
  * JIRA Cloud via REST API v3 (Basic Auth: E-Mail + API-Token).
@@ -43,7 +43,7 @@ export class JiraIntegration extends Integration {
       if (!res.ok) {
         return { ok: false, configured: true, status: res.status, message: `JIRA-Fehler ${res.status}: ${(await res.text()).slice(0, 200)}` };
       }
-      const me = await res.json();
+      const me = await parseJsonResponse(res);
       return { ok: true, configured: true, message: `OK – angemeldet als ${me.displayName || me.emailAddress || 'unbekannt'}` };
     } catch (err) {
       return { ok: false, configured: true, message: describeError(err) };
@@ -103,7 +103,7 @@ export class JiraIntegration extends Integration {
     let lastError;
     for (const path of paths) {
       const res = await this._get(path, { jql, fields, maxResults: 50 });
-      if (res.ok) return res.json();
+      if (res.ok) return parseJsonResponse(res);
       const body = (await res.text()).slice(0, 300);
       lastError = new Error(`JIRA-Fehler ${res.status} (${path}): ${body}`);
       // Nur bei "gibt es nicht" den Alt-Endpunkt versuchen; bei 401/403/400 sofort abbrechen.

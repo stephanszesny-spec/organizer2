@@ -108,6 +108,44 @@ Verknüpfte Vorgänge: ${JSON.stringify((links || []).map((l) => ({ subject: l.s
   return { subject: parsed.subject || '', body: parsed.body || '', generatedBy: config.llm.draftModel };
 }
 
+const SEARCH_SYSTEM = `Du bist eine semantische Suchfunktion für eine Todo-App.
+Du erhältst eine Suchanfrage und eine Liste von Todos.
+Gib die IDs der relevanten Todos zurück, nach Relevanz sortiert (relevanteste zuerst).
+Berücksichtige Bedeutung, Synonyme, verwandte Begriffe und Kontext – nicht nur exakte Wortübereinstimmungen.
+Gib nur wirklich passende Todos zurück. Antworte AUSSCHLIESSLICH mit JSON: { "ids": ["..."] }.`;
+
+/**
+ * LLM-gestützte semantische Suche. Liefert relevante Todo-IDs nach Relevanz.
+ * Ohne API-Key: null (Aufrufer nutzt dann die Text-Suche).
+ */
+export async function searchTodos(query, todos) {
+  const c = getClient();
+  if (!c) return null;
+
+  const compact = todos.map((t) => ({
+    id: t.id,
+    title: t.title,
+    notes: (t.notes || '').slice(0, 300),
+    category: t.category,
+    links: (t.links || []).map((l) => l.subject).filter(Boolean),
+  }));
+
+  const msg = await c.messages.create({
+    model: config.llm.model,
+    max_tokens: 1000,
+    system: SEARCH_SYSTEM,
+    messages: [
+      {
+        role: 'user',
+        content: `Suchanfrage: "${query}"\n\nTodos (JSON):\n${JSON.stringify(compact)}\n\nAntworte mit { "ids": [...] }.`,
+      },
+    ],
+  });
+  const text = msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
+  const parsed = parseJson(text);
+  return Array.isArray(parsed.ids) ? parsed.ids : [];
+}
+
 /**
  * Heuristischer Fallback ohne API-Key, damit der Sync-Flow auch ohne
  * Anthropic-Key sinnvolle (wenn auch simple) Ergebnisse liefert.

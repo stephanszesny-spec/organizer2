@@ -9,8 +9,28 @@ const CATEGORIES = [
 
 const SOURCE_ICON = { manual: '📝', m365mail: '✉️', teams: '💬', jira: '🟦', freshdesk: '🎫', email: '✉️' };
 
+const SORT_OPTIONS = [
+  { id: 'manual', label: 'Manuell (Drag&Drop)' },
+  { id: 'updated', label: 'Letzte Änderung' },
+  { id: 'priority', label: 'Priorität' },
+  { id: 'dueDate', label: 'Ziel-Datum' },
+];
+const PRIO_WEIGHT = { high: 0, medium: 1, low: 2 };
+
 let todos = [];
 let editingId = null;
+// Sortierpräferenz pro Spalte (in localStorage gespeichert)
+let sortPref = loadSortPref();
+// Suchzustand: query = aktueller Text; matchIds = Treffer-IDs (Set) oder null
+let search = { query: '', matchIds: null, mode: null, llmEnabled: false };
+
+function loadSortPref() {
+  try { return JSON.parse(localStorage.getItem('organizer2.sort') || '{}'); }
+  catch { return {}; }
+}
+function saveSortPref() {
+  localStorage.setItem('organizer2.sort', JSON.stringify(sortPref));
+}
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const api = async (url, opts = {}) => {
@@ -41,14 +61,31 @@ function buildBoard() {
     const col = document.createElement('section');
     col.className = 'column';
     col.dataset.cat = cat.id;
+    const current = sortPref[cat.id] || 'manual';
+    const opts = SORT_OPTIONS.map(
+      (o) => `<option value="${o.id}" ${o.id === current ? 'selected' : ''}>↕ ${o.label}</option>`,
+    ).join('');
     col.innerHTML = `
       <div class="column-head">
         <h2>${cat.label}</h2>
-        <span class="count" data-count="${cat.id}">0</span>
+        <div class="head-right">
+          <select class="col-sort ${current !== 'manual' ? 'active' : ''}" data-sort="${cat.id}" title="Sortierung">${opts}</select>
+          <span class="count" data-count="${cat.id}">0</span>
+        </div>
       </div>
       <div class="cards" data-cards="${cat.id}"></div>`;
     board.appendChild(col);
   }
+  // Sortier-Auswahl pro Spalte
+  document.querySelectorAll('[data-sort]').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      const cat = sel.dataset.sort;
+      sortPref[cat] = sel.value;
+      saveSortPref();
+      sel.classList.toggle('active', sel.value !== 'manual');
+      render();
+    });
+  });
   // Drag&Drop pro Spalte (funktioniert auch auf Touch dank SortableJS)
   document.querySelectorAll('[data-cards]').forEach((zone) => {
     Sortable.create(zone, {
@@ -103,12 +140,39 @@ function cardHtml(todo) {
     </div>`;
 }
 
+function sortComparator(mode) {
+  switch (mode) {
+    case 'updated':
+      return (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt);
+    case 'priority':
+      return (a, b) => (PRIO_WEIGHT[a.priority] - PRIO_WEIGHT[b.priority]) || (a.order - b.order);
+    case 'dueDate':
+      // frühestes Datum zuerst, Todos ohne Datum ans Ende
+      return (a, b) => {
+        if (!a.dueDate && !b.dueDate) return a.order - b.order;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return new Date(a.dueDate) - new Date(b.dueDate);
+      };
+    default:
+      return (a, b) => a.order - b.order;
+  }
+}
+
 function render() {
   for (const cat of CATEGORIES) {
     const zone = $(`[data-cards="${cat.id}"]`);
-    const items = todos
+    const mode = sortPref[cat.id] || 'manual';
+    let items = todos
       .filter((t) => t.category === cat.id)
-      .sort((a, b) => a.order - b.order);
+      .filter((t) => (search.matchIds ? search.matchIds.has(t.id) : true));
+    if (search.matchIds && search.mode === 'llm') {
+      // LLM liefert nach Relevanz sortierte IDs -> diese Reihenfolge übernehmen
+      const rank = new Map([...search.matchIds].map((id, i) => [id, i]));
+      items.sort((a, b) => rank.get(a.id) - rank.get(b.id));
+    } else {
+      items.sort(sortComparator(mode));
+    }
     zone.innerHTML = items.map(cardHtml).join('');
     $(`[data-count="${cat.id}"]`).textContent = items.length;
   }
@@ -132,6 +196,13 @@ function escapeHtml(s) {
 
 // ---------------- Drag&Drop ----------------
 async function onDragEnd(evt) {
+  // Während einer aktiven Suche ist die Ansicht gefiltert -> Reihenfolge nicht
+  // verlässlich speicherbar. Erst Suche zurücksetzen.
+  if (search.matchIds) {
+    toast('Suche zum Verschieben zurücksetzen', 'err');
+    await reload();
+    return;
+  }
   const targetCat = evt.to.dataset.cards;
   const fromCat = evt.from.dataset.cards;
   const collect = (zone) => Array.from(zone.querySelectorAll('.card')).map((c) => c.dataset.id);
@@ -327,6 +398,69 @@ async function sendMessage() {
   }
 }
 
+// ---------------- Suche ----------------
+function localMatchIds(query) {
+  const q = query.toLowerCase();
+  const ids = new Set();
+  for (const t of todos) {
+    const hay = [t.title, t.notes, ...(t.links || []).flatMap((l) => [l.subject, l.from])]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    if (hay.includes(q)) ids.add(t.id);
+  }
+  return ids;
+}
+
+function runTextSearch(query) {
+  search.query = query;
+  search.matchIds = localMatchIds(query);
+  search.mode = 'text';
+  $('#searchClear').classList.remove('hidden');
+  render();
+  showSearchBanner();
+}
+
+async function runAiSearch() {
+  const query = $('#searchInput').value.trim();
+  if (!query) return;
+  const btn = $('#aiSearchBtn');
+  btn.disabled = true; btn.textContent = '… KI';
+  try {
+    const r = await api('/api/search', { method: 'POST', body: { query } });
+    search.query = query;
+    search.matchIds = new Set(r.ids); // bei 'llm' nach Relevanz sortiert
+    search.mode = r.mode;
+    $('#searchClear').classList.remove('hidden');
+    render();
+    showSearchBanner();
+  } catch (e) {
+    toast('KI-Suche fehlgeschlagen: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '✨ KI';
+  }
+}
+
+function showSearchBanner() {
+  const banner = $('#searchBanner');
+  if (!search.matchIds) { banner.classList.add('hidden'); return; }
+  const n = search.matchIds.size;
+  const ai = search.mode === 'llm';
+  banner.className = `search-banner ${ai ? 'ai' : ''}`;
+  banner.innerHTML =
+    `${ai ? '✨ KI-Suche' : '🔎 Suche'}: <strong>${n}</strong> Treffer für „${escapeHtml(search.query)}"` +
+    `${ai ? ' (nach Relevanz)' : ''} <button id="bannerClear">Zurücksetzen ✕</button>`;
+  $('#bannerClear').addEventListener('click', clearSearch);
+}
+
+function clearSearch() {
+  search = { query: '', matchIds: null, mode: null, llmEnabled: search.llmEnabled };
+  $('#searchInput').value = '';
+  $('#searchClear').classList.add('hidden');
+  $('#searchBanner').classList.add('hidden');
+  render();
+}
+
 // ---------------- Sync & Status ----------------
 async function doSync() {
   const btn = $('#syncBtn');
@@ -353,6 +487,10 @@ async function loadStatus() {
       .join('');
     const sync = s.lastSync ? `Letzter Sync: ${new Date(s.lastSync).toLocaleString('de-DE')}` : 'Noch kein Sync';
     bar.innerHTML = `${llm}${integs}<span class="chip" style="margin-left:auto">${sync}</span>`;
+    // KI-Suchbutton nur zeigen, wenn LLM angebunden ist
+    search.llmEnabled = s.llm.enabled;
+    $('#aiSearchBtn').classList.toggle('hidden', !s.llm.enabled);
+    $('#searchInput').placeholder = s.llm.enabled ? 'Suchen… (Enter = KI-Suche)' : 'Suchen…';
   } catch (e) { /* still */ }
 }
 
@@ -377,6 +515,23 @@ function init() {
   $('#generateBtn').addEventListener('click', generateDraft);
   $('#sendBtn').addEventListener('click', sendMessage);
   $('#f-category').addEventListener('change', toggleIntervalField);
+  // Suche: Live-Textfilter beim Tippen, KI-Suche per Button oder Enter
+  const searchInput = $('#searchInput');
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.trim();
+    if (!q) clearSearch();
+    else runTextSearch(q);
+  });
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && search.llmEnabled && searchInput.value.trim()) {
+      e.preventDefault();
+      runAiSearch();
+    } else if (e.key === 'Escape') {
+      clearSearch();
+    }
+  });
+  $('#aiSearchBtn').addEventListener('click', runAiSearch);
+  $('#searchClear').addEventListener('click', clearSearch);
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => closeModal('#modal')));
   document.querySelectorAll('[data-close-draft]').forEach((b) => b.addEventListener('click', () => closeModal('#draftModal')));
   $('#reminderBell').addEventListener('click', () => {

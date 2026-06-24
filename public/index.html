@@ -16,6 +16,11 @@
         <span class="sync-icon">⟳</span> Sync
       </button>
     </div>
+    <div class="topbar-search">
+      <input type="search" id="searchInput" placeholder="Suchen…" autocomplete="off" />
+      <button id="searchClear" class="search-clear hidden" title="Suche zurücksetzen">✕</button>
+      <button id="aiSearchBtn" class="btn btn-ghost hidden" title="KI-gestützte Suche">✨ KI</button>
+    </div>
     <div class="topbar-right">
       <button id="reminderBell" class="bell" title="Fällige Reminder">
         🔔<span id="reminderCount" class="badge hidden">0</span>
@@ -23,6 +28,8 @@
       <button id="addBtn" class="btn btn-add">+ Todo</button>
     </div>
   </header>
+
+  <div id="searchBanner" class="search-banner hidden"></div>
 
   <div id="statusBar" class="status-bar"></div>
 

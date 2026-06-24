@@ -68,6 +68,13 @@ export class JiraIntegration extends Integration {
       receivedAt: issue.fields.updated,
       dueDate: issue.fields.duedate || null,
       webUrl: new URL(`/browse/${issue.key}`, config.jira.baseUrl).toString(),
+      // "Betrifft mich"-Signatur: Status/Priorität/Ziel-Datum. Ändert sich z.B.
+      // der Status (wieder geöffnet, neue Phase), gilt das als relevante Änderung.
+      relevanceKey: [
+        `status:${issue.fields.status?.name || ''}`,
+        `prio:${issue.fields.priority?.name || ''}`,
+        `due:${issue.fields.duedate || ''}`,
+      ].join('|'),
     }));
   }
 
@@ -133,5 +140,6 @@ const MOCK_JIRA = [
     receivedAt: new Date(Date.now() - 3 * 86400000).toISOString(),
     dueDate: new Date(Date.now() + 4 * 86400000).toISOString().slice(0, 10),
     webUrl: 'https://your-domain.atlassian.net/browse/ORG-42',
+    relevanceKey: 'status:In Arbeit|prio:|due:',
   },
 ];

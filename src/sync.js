@@ -1,6 +1,6 @@
 import * as db from './db.js';
 import { integrations } from './integrations/index.js';
-import { deriveTasks } from './llm/anthropic.js';
+import { deriveTasks, isChangeRelevant } from './llm/anthropic.js';
 
 let running = false;
 
@@ -32,7 +32,10 @@ export async function runSync({ only } = {}) {
           if (!src) continue;
 
           const dedupeKey = src.id; // ein Todo pro Source-Item
-          const incoming = src.receivedAt || null; // "Stand" des Quell-Items
+          const incoming = src.receivedAt || null; // Zeitstempel (nur zur Info)
+          // "Betrifft mich"-Signatur. Fehlt sie (z.B. Mail/Teams), nehmen wir die
+          // stabile Item-ID -> dann gibt es kein Wiederauftauchen.
+          const incomingKey = src.relevanceKey || src.id;
           const link = {
             source: src.source,
             type: src.type,
@@ -47,16 +50,35 @@ export async function runSync({ only } = {}) {
 
           const existing = db.findByDedupeKey(dedupeKey);
           if (existing) {
-            const prev = existing.sourceUpdatedAt;
-            const isNewer = incoming && prev && new Date(incoming) > new Date(prev);
-            if (isNewer) {
-              // Neuer Stand -> erledigtes Todo wieder einblenden & Link aktualisieren
-              await db.applySourceState(existing.id, { sourceUpdatedAt: incoming, link, resurface: true });
-              result.updated++;
-              result.bySource[integ.id].updated++;
+            const prevKey = existing.relevanceKey;
+            const changed = prevKey != null && incomingKey !== prevKey;
+            if (changed) {
+              // Relevante Felder haben sich geändert. Bei aktivem LLM zusätzlich
+              // prüfen, ob die Änderung den Nutzer wirklich betrifft.
+              const relevant = await isChangeRelevant({
+                todo: existing,
+                item: src,
+                previousKey: prevKey,
+                newKey: incomingKey,
+              });
+              // Key immer mitziehen, damit dieselbe Änderung nicht erneut auslöst.
+              await db.applySourceState(existing.id, {
+                sourceUpdatedAt: incoming,
+                relevanceKey: incomingKey,
+                link,
+                resurface: relevant,
+              });
+              if (relevant) {
+                result.updated++;
+                result.bySource[integ.id].updated++;
+              } else {
+                result.skipped++;
+              }
             } else {
-              // Kein neuer Stand: nur Basiswert merken (ohne Wiederauftauchen), sonst nichts tun
-              if (!prev && incoming) await db.applySourceState(existing.id, { sourceUpdatedAt: incoming });
+              // Keine relevante Änderung: nur Basiswert merken (kein Wiederauftauchen).
+              if (prevKey == null) {
+                await db.applySourceState(existing.id, { sourceUpdatedAt: incoming, relevanceKey: incomingKey });
+              }
               result.skipped++;
             }
             continue;
@@ -72,6 +94,7 @@ export async function runSync({ only } = {}) {
             source: src.source,
             dedupeKey,
             sourceUpdatedAt: incoming,
+            relevanceKey: incomingKey,
             links: [link],
           });
           result.created++;

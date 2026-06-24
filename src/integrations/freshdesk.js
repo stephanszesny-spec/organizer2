@@ -62,6 +62,8 @@ export class FreshdeskIntegration extends Integration {
       receivedAt: t.updated_at,
       dueDate: t.due_by ? t.due_by.slice(0, 10) : null,
       webUrl: `${base}/a/tickets/${t.id}`,
+      // "Betrifft mich"-Signatur: Status + Fälligkeit.
+      relevanceKey: `status:${t.status}|due:${t.due_by ? t.due_by.slice(0, 10) : ''}`,
     }));
   }
 }
@@ -79,5 +81,6 @@ const MOCK_FRESHDESK = [
     receivedAt: new Date(Date.now() - 1 * 86400000).toISOString(),
     dueDate: new Date(Date.now() + 1 * 86400000).toISOString().slice(0, 10),
     webUrl: 'https://your-domain.freshdesk.com/a/tickets/1051',
+    relevanceKey: 'status:2|due:',
   },
 ];

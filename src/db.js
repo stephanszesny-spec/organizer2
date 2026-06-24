@@ -85,9 +85,12 @@ function normalize(todo) {
     // Erledigt-Status
     done: Boolean(todo.done),
     doneAt: todo.doneAt || null,
-    // Letzter bekannter "Stand" des Quell-Items (z.B. JIRA updated) – für
-    // Wiederauftauchen erledigter Todos bei neuem Sync-Stand.
+    // Letzter bekannter "Stand" des Quell-Items (z.B. JIRA updated) – nur zur Info.
     sourceUpdatedAt: todo.sourceUpdatedAt || null,
+    // Signatur der für den Nutzer RELEVANTEN Felder (z.B. Status). Ändert sich
+    // diese, taucht ein erledigtes Todo wieder auf. Reine Zeitstempel-/Fremd-
+    // änderungen ändern den Key NICHT.
+    relevanceKey: todo.relevanceKey || null,
   };
   return t;
 }
@@ -154,10 +157,11 @@ export async function setDone(id, done) {
  * - resurface: holt ein erledigtes Todo zurück in die Hauptübersicht (done=false)
  * - link: aktualisiert den verknüpften Vorgang
  */
-export async function applySourceState(id, { sourceUpdatedAt, link, resurface } = {}) {
+export async function applySourceState(id, { sourceUpdatedAt, relevanceKey, link, resurface } = {}) {
   const todo = getById(id);
   if (!todo) return null;
   if (sourceUpdatedAt) todo.sourceUpdatedAt = sourceUpdatedAt;
+  if (relevanceKey !== undefined) todo.relevanceKey = relevanceKey;
   if (link) todo.links = [link];
   if (resurface) {
     todo.done = false;

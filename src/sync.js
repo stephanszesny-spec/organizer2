@@ -12,7 +12,7 @@ let running = false;
 export async function runSync({ only } = {}) {
   if (running) return { skipped: true, reason: 'Sync läuft bereits' };
   running = true;
-  const result = { created: 0, skipped: 0, errors: [], bySource: {} };
+  const result = { created: 0, updated: 0, skipped: 0, errors: [], bySource: {} };
 
   try {
     const active = only ? integrations.filter((i) => i.id === only) : integrations;
@@ -25,14 +25,40 @@ export async function runSync({ only } = {}) {
 
         const derived = await deriveTasks(items);
         const itemById = new Map(items.map((it) => [it.id, it]));
+        result.bySource[integ.id].updated = 0;
 
         for (const task of derived) {
           const src = itemById.get(task.sourceItemId);
           if (!src) continue;
 
           const dedupeKey = src.id; // ein Todo pro Source-Item
-          if (db.findByDedupeKey(dedupeKey)) {
-            result.skipped++;
+          const incoming = src.receivedAt || null; // "Stand" des Quell-Items
+          const link = {
+            source: src.source,
+            type: src.type,
+            id: src.id,
+            subject: src.subject,
+            from: src.from || '',
+            snippet: src.snippet || '',
+            webUrl: src.webUrl || '',
+            receivedAt: src.receivedAt || null,
+            sentByUser: Boolean(src.sentByUser),
+          };
+
+          const existing = db.findByDedupeKey(dedupeKey);
+          if (existing) {
+            const prev = existing.sourceUpdatedAt;
+            const isNewer = incoming && prev && new Date(incoming) > new Date(prev);
+            if (isNewer) {
+              // Neuer Stand -> erledigtes Todo wieder einblenden & Link aktualisieren
+              await db.applySourceState(existing.id, { sourceUpdatedAt: incoming, link, resurface: true });
+              result.updated++;
+              result.bySource[integ.id].updated++;
+            } else {
+              // Kein neuer Stand: nur Basiswert merken (ohne Wiederauftauchen), sonst nichts tun
+              if (!prev && incoming) await db.applySourceState(existing.id, { sourceUpdatedAt: incoming });
+              result.skipped++;
+            }
             continue;
           }
 
@@ -45,19 +71,8 @@ export async function runSync({ only } = {}) {
             customer: task.customer || '',
             source: src.source,
             dedupeKey,
-            links: [
-              {
-                source: src.source,
-                type: src.type,
-                id: src.id,
-                subject: src.subject,
-                from: src.from || '',
-                snippet: src.snippet || '',
-                webUrl: src.webUrl || '',
-                receivedAt: src.receivedAt || null,
-                sentByUser: Boolean(src.sentByUser),
-              },
-            ],
+            sourceUpdatedAt: incoming,
+            links: [link],
           });
           result.created++;
           result.bySource[integ.id].created++;

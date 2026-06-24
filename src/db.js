@@ -82,6 +82,12 @@ function normalize(todo) {
         ? Number(todo.reminderIntervalDays) || DEFAULT_REMINDER_INTERVAL_DAYS
         : (todo.reminderIntervalDays ?? null),
     lastReminderSentAt: todo.lastReminderSentAt || null,
+    // Erledigt-Status
+    done: Boolean(todo.done),
+    doneAt: todo.doneAt || null,
+    // Letzter bekannter "Stand" des Quell-Items (z.B. JIRA updated) – für
+    // Wiederauftauchen erledigter Todos bei neuem Sync-Stand.
+    sourceUpdatedAt: todo.sourceUpdatedAt || null,
   };
   return t;
 }
@@ -128,6 +134,36 @@ export async function addComment(id, text) {
   const comment = normalizeComment({ text });
   todo.comments.push(comment);
   todo.updatedAt = now();
+  await persist();
+  return todo;
+}
+
+export async function setDone(id, done) {
+  const todo = getById(id);
+  if (!todo) return null;
+  todo.done = Boolean(done);
+  todo.doneAt = todo.done ? now() : null;
+  todo.updatedAt = now();
+  await persist();
+  return todo;
+}
+
+/**
+ * Wendet beim Sync den neuen Stand eines Quell-Items an.
+ * - sourceUpdatedAt: merkt sich den letzten bekannten "Stand" (z.B. JIRA updated)
+ * - resurface: holt ein erledigtes Todo zurück in die Hauptübersicht (done=false)
+ * - link: aktualisiert den verknüpften Vorgang
+ */
+export async function applySourceState(id, { sourceUpdatedAt, link, resurface } = {}) {
+  const todo = getById(id);
+  if (!todo) return null;
+  if (sourceUpdatedAt) todo.sourceUpdatedAt = sourceUpdatedAt;
+  if (link) todo.links = [link];
+  if (resurface) {
+    todo.done = false;
+    todo.doneAt = null;
+    todo.updatedAt = now();
+  }
   await persist();
   return todo;
 }

@@ -91,6 +91,13 @@ app.delete('/api/todos/:id', wrap(async (req, res) => {
   res.status(204).end();
 }));
 
+// --- Erledigt-Status ---
+app.post('/api/todos/:id/done', wrap(async (req, res) => {
+  const todo = await db.setDone(req.params.id, Boolean(req.body?.done));
+  if (!todo) return res.status(404).json({ error: 'Nicht gefunden' });
+  res.json(decorate(todo));
+}));
+
 // --- Kommentare (zeitgestempelt) ---
 app.post('/api/todos/:id/comments', wrap(async (req, res) => {
   const text = (req.body?.text || '').trim();

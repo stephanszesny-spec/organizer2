@@ -167,7 +167,12 @@ html, body {
 .card.prio-medium { border-left-color: var(--medium); }
 .card.prio-low { border-left-color: var(--low); }
 .card.reminder-due { box-shadow: 0 0 0 2px var(--reminder); }
-.card-title { font-size: 14px; font-weight: 600; line-height: 1.35; margin-bottom: 8px; word-break: break-word; }
+.card-head { display: flex; align-items: flex-start; gap: 8px; }
+.card-check { width: 18px; height: 18px; margin: 1px 0 0; flex: 0 0 auto; cursor: pointer; accent-color: var(--low); }
+.card-title { font-size: 14px; font-weight: 600; line-height: 1.35; margin-bottom: 8px; word-break: break-word; flex: 1; }
+.card.done { opacity: .55; }
+.card.done .card-title { text-decoration: line-through; }
+.btn-ghost.active { background: var(--primary); border-color: var(--primary); color: #fff; }
 .card-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .tag {
   font-size: 11px; padding: 2px 7px; border-radius: 6px;

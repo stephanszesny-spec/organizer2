@@ -12,9 +12,10 @@ LLM (Anthropic Claude) automatisch Aufgaben und Reminder ab.
 - **Sortierung pro Bereich** nach letzter Änderung, Priorität oder Ziel-Datum
 - **Globale Suche** (Text + optional KI-gestützt, wenn LLM angebunden)
 - **Reminder** mit Intervall (Standard **7 Tage**) und Fälligkeits-Hinweis 🔔.
-  Beim **automatischen Sync** landen in „Reminder" ausschließlich Vorgänge, die
-  du an andere **delegiert** hast bzw. bei denen du auf eine Antwort wartest und
-  ggf. nachfassen musst – nicht deine eigenen Aufgaben.
+  Beim **automatischen Sync** landen in „Reminder" Vorgänge, bei denen du auf
+  **Input von externen/anderen wartest** und ggf. nachfassen musst – z. B.
+  delegierte Aufgaben oder eine von dir gestellte, noch unbeantwortete Frage.
+  Nicht: deine eigenen Aufgaben (der Ball liegt bei dir).
 - **Verknüpfte Vorgänge:** beim Öffnen eines Todos siehst du die zugehörigen
   Mails/Nachrichten/Tickets und kannst sie per Klick im Original öffnen
 - **Entwürfe generieren & senden:** Mail/Teams-Nachricht per KI auf Basis eines Todos

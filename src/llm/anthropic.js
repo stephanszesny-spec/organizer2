@@ -23,14 +23,16 @@ const EXTRACT_SYSTEM = `Du bist ein Assistent, der Arbeits-Items (E-Mails, Teams
 Regeln:
 - Leite nur dann eine Aufgabe ab, wenn für den Nutzer wirklich eine Handlung nötig ist.
 - Kategorien: "strategic" (strategisch), "operative" (operativ), "sales" (Salesprozesse), "reminder".
-- WICHTIG – "reminder" ist eng definiert: Verwende es AUSSCHLIESSLICH, wenn der
-  Nutzer eine Aufgabe an eine andere Person DELEGIERT hat oder auf eine
-  Antwort/Zulieferung von jemand anderem WARTET und diese Person ggf. erneut
-  erinnern (einen Reminder senden) muss. Typischer Fall: vom Nutzer GESENDETE
-  Nachricht ohne Antwort ("sentByUser": true UND "needsReply": true), oder eine
-  Mail, in der der Nutzer jemanden um etwas gebeten hat und noch keine Reaktion vorliegt.
-- KEIN "reminder" für Aufgaben, die der Nutzer SELBST erledigen muss – diese
-  gehören in "strategic", "operative" oder "sales".
+- WICHTIG – "reminder" gilt für Vorgänge, bei denen der Nutzer auf INPUT von
+  EXTERNEN/anderen Personen WARTET und ggf. nachfassen (einen Reminder senden)
+  muss. Das umfasst u.a.:
+    * an andere DELEGIERTE Aufgaben, deren Erledigung noch aussteht,
+    * vom Nutzer GESTELLTE Fragen/Anfragen, auf die noch keine Antwort vorliegt,
+    * jede vom Nutzer GESENDETE Nachricht ohne Antwort
+      ("sentByUser": true UND "needsReply": true).
+  Kurz: Der Ball liegt bei jemand anderem, der Nutzer wartet.
+- KEIN "reminder" für Aufgaben, die der Nutzer SELBST erledigen muss (der Ball
+  liegt beim Nutzer) – diese gehören in "strategic", "operative" oder "sales".
 - Priorität: "high", "medium" oder "low".
 - "dueDate" nur als ISO-Datum (YYYY-MM-DD), wenn ein Termin erkennbar ist, sonst null.
 - "title" ist eine kurze, handlungsorientierte Beschreibung (max. ~80 Zeichen).
@@ -163,8 +165,8 @@ export async function searchTodos(query, todos) {
  */
 function heuristicDerive(items) {
   return items.map((it) => {
-    // Reminder nur bei delegierten/auf Antwort wartenden Vorgängen
-    // (selbst gesendet, noch keine Antwort).
+    // Reminder, wenn der Nutzer auf externen Input wartet: selbst gesendet
+    // (delegiert oder Frage gestellt) und noch keine Antwort erhalten.
     const isReminder = Boolean(it.sentByUser && it.needsReply);
     return {
       sourceItemId: it.id,

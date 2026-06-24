@@ -137,6 +137,39 @@ Setzt einen Hintergrund-Sync alle 15 Minuten. `0` = nur manueller Sync per Butto
 
 ---
 
+## 7. Automatisch starten beim Anmelden (Windows)
+
+Damit die App nicht jedes Mal manuell per `npm start` gestartet werden muss,
+liegt im Ordner `scripts\` ein Ein-Klick-Installer:
+
+1. Einmalig sicherstellen, dass die Abhängigkeiten installiert sind
+   (`npm install` im Projektordner) und `node` im PATH ist.
+2. **Doppelklick auf `scripts\install-autostart.bat`.**
+   Das legt eine Verknüpfung im Windows-Autostart-Ordner an, die den Server
+   bei jeder Anmeldung **unsichtbar im Hintergrund** startet (kein Fenster).
+3. Danach ist die App jederzeit unter **http://localhost:3000** erreichbar –
+   lege dir am besten ein Lesezeichen an.
+
+Weitere Helfer im Ordner `scripts\`:
+
+| Datei | Zweck |
+|-------|-------|
+| `install-autostart.bat`   | Autostart einrichten (und sofort starten) |
+| `uninstall-autostart.bat` | Autostart wieder entfernen |
+| `run-hidden.vbs`          | Startet den Server unsichtbar (vom Autostart genutzt) |
+| `stop.bat`                | Laufenden Hintergrund-Server beenden |
+
+Läuft etwas nicht, steht die Server-Ausgabe zur Fehlersuche in
+`organizer2.log` im Projektordner. Zum manuellen Start ohne Autostart genügt
+weiterhin ein Doppelklick auf `scripts\run-hidden.vbs` (unsichtbar) oder
+`npm start` (mit Konsolenfenster).
+
+> Hinweis: Der Autostart greift bei der **Anmeldung** des Benutzers. Wenn der
+> PC läuft, aber niemand angemeldet ist, startet die App nicht – das ist für
+> den Zugriff vom Handy im Heimnetz aber der Normalfall.
+
+---
+
 ## Architektur (kurz)
 
 ```

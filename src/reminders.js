@@ -26,7 +26,7 @@ export function reminderStatus(todo, ref = new Date()) {
 
 export function dueReminders(todos, ref = new Date()) {
   return todos
-    .filter((t) => t.category === 'reminder')
+    .filter((t) => t.category === 'reminder' && !t.done)
     .map((t) => ({ todo: t, status: reminderStatus(t, ref) }))
     .filter((x) => x.status?.due);
 }

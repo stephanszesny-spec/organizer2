@@ -167,7 +167,12 @@ html, body {
 .card.prio-medium { border-left-color: var(--medium); }
 .card.prio-low { border-left-color: var(--low); }
 .card.reminder-due { box-shadow: 0 0 0 2px var(--reminder); }
-.card-title { font-size: 14px; font-weight: 600; line-height: 1.35; margin-bottom: 8px; word-break: break-word; }
+.card-head { display: flex; align-items: flex-start; gap: 8px; }
+.card-check { width: 18px; height: 18px; margin: 1px 0 0; flex: 0 0 auto; cursor: pointer; accent-color: var(--low); }
+.card-title { font-size: 14px; font-weight: 600; line-height: 1.35; margin-bottom: 8px; word-break: break-word; flex: 1; }
+.card.done { opacity: .55; }
+.card.done .card-title { text-decoration: line-through; }
+.btn-ghost.active { background: var(--primary); border-color: var(--primary); color: #fff; }
 .card-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .tag {
   font-size: 11px; padding: 2px 7px; border-radius: 6px;
@@ -252,6 +257,26 @@ html, body {
 .link-item .li-ico { font-size: 18px; }
 .link-item .li-sub { font-size: 13px; font-weight: 600; }
 .link-item .li-from { font-size: 12px; color: var(--text-dim); }
+
+/* ---- Verbindungstest ---- */
+.test-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.test-empty { font-size: 13px; color: var(--text-dim); }
+.test-row {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 4px solid var(--text-dim); border-radius: 8px; padding: 10px 12px;
+}
+.test-row.ok { border-left-color: var(--low); }
+.test-row.err { border-left-color: var(--danger); }
+.test-row.na { border-left-color: var(--text-dim); }
+.test-row.pending { border-left-color: var(--primary); }
+.test-row .t-ico { font-size: 16px; font-weight: 700; line-height: 1.4; }
+.test-row.ok .t-ico { color: var(--low); }
+.test-row.err .t-ico { color: var(--danger); }
+.test-row.na .t-ico { color: var(--text-dim); }
+.test-row .t-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.test-row .t-label { font-size: 14px; font-weight: 600; }
+.test-row .t-msg { font-size: 12px; color: var(--text-dim); word-break: break-word; white-space: pre-wrap; }
 
 /* ---- Toast ---- */
 .toast {

@@ -23,6 +23,8 @@ let editingId = null;
 let sortPref = loadSortPref();
 // Suchzustand: query = aktueller Text; matchIds = Treffer-IDs (Set) oder null
 let search = { query: '', matchIds: null, mode: null, llmEnabled: false };
+// Erledigte ein-/ausblenden (in localStorage gemerkt)
+let showDone = localStorage.getItem('organizer2.showDone') === '1';
 
 function loadSortPref() {
   try { return JSON.parse(localStorage.getItem('organizer2.sort') || '{}'); }
@@ -95,6 +97,7 @@ function buildBoard() {
       chosenClass: 'sortable-chosen',
       delay: 120, // Touch: kurzes Halten -> Drag, sonst Scroll
       delayOnTouchOnly: true,
+      filter: '.card-check', // Klick aufs Häkchen startet keinen Drag
       onEnd: onDragEnd,
     });
   });
@@ -137,8 +140,11 @@ function cardHtml(todo) {
 
   const dueCls = todo.category === 'reminder' && todo.reminder?.due ? 'reminder-due' : '';
   return `
-    <div class="card prio-${todo.priority} ${dueCls}" data-id="${todo.id}">
-      <div class="card-title">${escapeHtml(todo.title)}</div>
+    <div class="card prio-${todo.priority} ${dueCls} ${todo.done ? 'done' : ''}" data-id="${todo.id}">
+      <div class="card-head">
+        <input type="checkbox" class="card-check" data-id="${todo.id}" ${todo.done ? 'checked' : ''} title="Als erledigt markieren" />
+        <div class="card-title">${escapeHtml(todo.title)}</div>
+      </div>
       <div class="card-meta">${tags.filter(Boolean).join('')}</div>
     </div>`;
 }
@@ -176,18 +182,48 @@ function render() {
     } else {
       items.sort(sortComparator(mode));
     }
-    zone.innerHTML = items.map(cardHtml).join('');
-    $(`[data-count="${cat.id}"]`).textContent = items.length;
+    // Erledigte ausblenden – bzw. (optional) ans Ende der Spalte einblenden
+    const active = items.filter((t) => !t.done);
+    const doneItems = items.filter((t) => t.done);
+    const list = showDone ? active.concat(doneItems) : active;
+    zone.innerHTML = list.map(cardHtml).join('');
+    $(`[data-count="${cat.id}"]`).textContent = list.length;
   }
   // Klick öffnet Detail
   document.querySelectorAll('.card').forEach((c) =>
     c.addEventListener('click', () => openEdit(c.dataset.id)),
   );
+  // Erledigt-Häkchen auf der Karte (öffnet nicht das Detail)
+  document.querySelectorAll('.card-check').forEach((cb) => {
+    cb.addEventListener('click', (e) => e.stopPropagation());
+    cb.addEventListener('change', (e) => {
+      e.stopPropagation();
+      setTodoDone(cb.dataset.id, cb.checked);
+    });
+  });
   updateReminderBadge();
 }
 
+async function setTodoDone(id, done) {
+  try {
+    await api(`/api/todos/${id}/done`, { method: 'POST', body: { done } });
+    await reload();
+    toast(done ? 'Als erledigt markiert' : 'Wieder geöffnet', 'ok');
+  } catch (e) {
+    toast('Fehler: ' + e.message, 'err');
+    await reload();
+  }
+}
+
+function toggleShowDone() {
+  showDone = !showDone;
+  localStorage.setItem('organizer2.showDone', showDone ? '1' : '');
+  $('#toggleDone').classList.toggle('active', showDone);
+  render();
+}
+
 function updateReminderBadge() {
-  const due = todos.filter((t) => t.category === 'reminder' && t.reminder?.due).length;
+  const due = todos.filter((t) => t.category === 'reminder' && !t.done && t.reminder?.due).length;
   const badge = $('#reminderCount');
   badge.textContent = due;
   badge.classList.toggle('hidden', due === 0);
@@ -234,6 +270,7 @@ function openCreate() {
   $('#f-notes').value = '';
   $('#f-updatedAt').textContent = '–';
   $('#deleteBtn').classList.add('hidden');
+  $('#doneBtn').classList.add('hidden');
   $('#draftBtn').classList.add('hidden');
   $('#linksSection').classList.add('hidden');
   $('#commentsSection').classList.add('hidden'); // erst nach Erstellung
@@ -259,6 +296,9 @@ function openEdit(id) {
   $('#f-updatedAt').textContent = t.updatedAt ? new Date(t.updatedAt).toLocaleString('de-DE') : '–';
   $('#deleteBtn').classList.remove('hidden');
   $('#draftBtn').classList.remove('hidden');
+  const doneBtn = $('#doneBtn');
+  doneBtn.classList.remove('hidden');
+  doneBtn.textContent = t.done ? '↺ Wieder öffnen' : '✓ Erledigt';
   fillCustomerList();
   toggleIntervalField();
   renderReminderInfo(t);
@@ -530,17 +570,52 @@ async function doSync() {
   try {
     const r = await api('/api/sync', { method: 'POST' });
     await reload();
+    const summary = `${r.created} neu, ${r.updated || 0} aktualisiert, ${r.skipped} bekannt`;
     if (r.errors?.length) {
       // Erste konkrete Fehlermeldung mit anzeigen (z.B. JIRA-Statuscode)
       const first = r.errors[0];
-      toast(`Sync: ${r.created} neu, ${r.skipped} bekannt – Fehler (${first.source}): ${first.message}`, 'err');
+      toast(`Sync: ${summary} – Fehler (${first.source}): ${first.message}`, 'err');
     } else {
-      toast(`Sync: ${r.created} neu, ${r.skipped} bekannt`, 'ok');
+      toast(`Sync: ${summary}`, 'ok');
     }
   } catch (e) {
     toast('Sync fehlgeschlagen: ' + e.message, 'err');
   } finally {
     btn.classList.remove('syncing'); btn.disabled = false;
+  }
+}
+
+// ---------------- Verbindungstest ----------------
+function openTest() {
+  $('#testList').innerHTML = '<li class="test-empty">Noch nicht getestet – auf „Alle testen" klicken.</li>';
+  showModal('#testModal');
+}
+
+function testRowHtml(x) {
+  const state = !x.configured ? 'na' : x.ok ? 'ok' : 'err';
+  const icon = state === 'ok' ? '✓' : state === 'err' ? '✗' : '–';
+  return `<li class="test-row ${state}">
+    <span class="t-ico">${icon}</span>
+    <span class="t-body">
+      <span class="t-label">${escapeHtml(x.label)}</span>
+      <span class="t-msg">${escapeHtml(x.message || '')}</span>
+    </span>
+  </li>`;
+}
+
+async function runTests() {
+  const btn = $('#runTestBtn');
+  btn.disabled = true;
+  btn.textContent = '… teste';
+  $('#testList').innerHTML = '<li class="test-row pending"><span class="t-ico">⟳</span><span class="t-body"><span class="t-label">Teste Verbindungen…</span></span></li>';
+  try {
+    const r = await api('/api/test');
+    $('#testList').innerHTML = r.results.map(testRowHtml).join('');
+  } catch (e) {
+    $('#testList').innerHTML = `<li class="test-row err"><span class="t-ico">✗</span><span class="t-body"><span class="t-label">Test fehlgeschlagen</span><span class="t-msg">${escapeHtml(e.message)}</span></span></li>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Alle testen';
   }
 }
 
@@ -578,6 +653,14 @@ function init() {
   $('#syncBtn').addEventListener('click', doSync);
   $('#saveBtn').addEventListener('click', saveTodo);
   $('#deleteBtn').addEventListener('click', deleteTodo);
+  $('#doneBtn').addEventListener('click', async () => {
+    if (!editingId) return;
+    const t = todos.find((x) => x.id === editingId);
+    closeModal('#modal');
+    await setTodoDone(editingId, !t?.done);
+  });
+  $('#toggleDone').addEventListener('click', toggleShowDone);
+  $('#toggleDone').classList.toggle('active', showDone);
   $('#draftBtn').addEventListener('click', openDraft);
   $('#addCommentBtn').addEventListener('click', addComment);
   $('#commentInput').addEventListener('keydown', (e) => {
@@ -585,6 +668,9 @@ function init() {
   });
   $('#generateBtn').addEventListener('click', generateDraft);
   $('#sendBtn').addEventListener('click', sendMessage);
+  $('#menuBtn').addEventListener('click', openTest);
+  $('#runTestBtn').addEventListener('click', runTests);
+  document.querySelectorAll('[data-close-test]').forEach((b) => b.addEventListener('click', () => closeModal('#testModal')));
   $('#f-category').addEventListener('change', toggleIntervalField);
   // Suche: Live-Textfilter beim Tippen, KI-Suche per Button oder Enter
   const searchInput = $('#searchInput');

@@ -1,8 +1,23 @@
 import { Integration } from './base.js';
 import { config } from '../config.js';
+import { describeError } from '../util.js';
 
 /**
  * JIRA Cloud via REST API v3 (Basic Auth: E-Mail + API-Token).
+ *
+ * NUR-LESEND. Diese Integration verwendet ausschliesslich lesende GET-Endpunkte;
+ * Anlegen, Bearbeiten oder Loeschen ist bewusst NICHT implementiert.
+ *
+ * Genutzte Endpunkte (alle GET, read-only):
+ *   - GET /rest/api/3/search/jql   Issues per JQL suchen (aktueller Cloud-Endpunkt)
+ *       Query: jql, fields, maxResults, nextPageToken
+ *       Benoetigte OAuth-Scopes (granular): read:jira-work (lesend)
+ *   - GET /rest/api/3/search       veralteter Vorgaenger, nur als Fallback (404/410)
+ *
+ * Schreibende Endpunkte wie POST /rest/api/3/issue (anlegen),
+ * PUT /rest/api/3/issue/{key} (bearbeiten) oder DELETE /rest/api/3/issue/{key}
+ * (loeschen) werden hier absichtlich nie aufgerufen. Der zentrale Zugriff laeuft
+ * ueber _get(), das ausschliesslich GET sendet und keinen Body zulaesst.
  */
 export class JiraIntegration extends Integration {
   constructor() {
@@ -16,6 +31,23 @@ export class JiraIntegration extends Integration {
   _authHeader() {
     const token = Buffer.from(`${config.jira.email}:${config.jira.apiToken}`).toString('base64');
     return `Basic ${token}`;
+  }
+
+  async testConnection() {
+    if (!this.isConfigured()) {
+      return { ok: false, configured: false, message: 'Nicht konfiguriert (Mock-Modus).' };
+    }
+    // GET /rest/api/3/myself: leichter, rein lesender Auth-/Verbindungstest.
+    try {
+      const res = await this._get('/rest/api/3/myself', {});
+      if (!res.ok) {
+        return { ok: false, configured: true, status: res.status, message: `JIRA-Fehler ${res.status}: ${(await res.text()).slice(0, 200)}` };
+      }
+      const me = await res.json();
+      return { ok: true, configured: true, message: `OK – angemeldet als ${me.displayName || me.emailAddress || 'unbekannt'}` };
+    } catch (err) {
+      return { ok: false, configured: true, message: describeError(err) };
+    }
   }
 
   async fetchItems() {
@@ -36,25 +68,41 @@ export class JiraIntegration extends Integration {
       receivedAt: issue.fields.updated,
       dueDate: issue.fields.duedate || null,
       webUrl: new URL(`/browse/${issue.key}`, config.jira.baseUrl).toString(),
+      // "Betrifft mich"-Signatur: Status/Priorität/Ziel-Datum. Ändert sich z.B.
+      // der Status (wieder geöffnet, neue Phase), gilt das als relevante Änderung.
+      relevanceKey: [
+        `status:${issue.fields.status?.name || ''}`,
+        `prio:${issue.fields.priority?.name || ''}`,
+        `due:${issue.fields.duedate || ''}`,
+      ].join('|'),
     }));
   }
 
   /**
-   * JIRA-Suche. Bevorzugt den aktuellen Cloud-Endpunkt /rest/api/3/search/jql;
-   * fällt nur bei "Endpunkt nicht vorhanden" (404/410) auf den alten
-   * /rest/api/3/search zurück (z.B. ältere Server/Data-Center-Instanzen).
+   * Zentraler, AUSSCHLIESSLICH LESENDER Zugriff. Erzwingt method GET und sendet
+   * niemals einen Body – damit sind schreibende Aufrufe strukturell unmoeglich.
+   */
+  async _get(path, params) {
+    const url = new URL(path, config.jira.baseUrl);
+    for (const [key, value] of Object.entries(params || {})) {
+      url.searchParams.set(key, String(value));
+    }
+    return fetch(url, {
+      method: 'GET', // read-only – bewusst hart kodiert
+      headers: { Authorization: this._authHeader(), Accept: 'application/json' },
+    });
+  }
+
+  /**
+   * JIRA-Suche per JQL (lesend). Bevorzugt den aktuellen Cloud-Endpunkt
+   * /rest/api/3/search/jql; fällt nur bei "Endpunkt nicht vorhanden" (404/410)
+   * auf den alten /rest/api/3/search zurück (z.B. ältere Server/Data-Center).
    */
   async _search(jql, fields) {
     const paths = ['/rest/api/3/search/jql', '/rest/api/3/search'];
     let lastError;
     for (const path of paths) {
-      const url = new URL(path, config.jira.baseUrl);
-      url.searchParams.set('jql', jql);
-      url.searchParams.set('maxResults', '50');
-      url.searchParams.set('fields', fields);
-      const res = await fetch(url, {
-        headers: { Authorization: this._authHeader(), Accept: 'application/json' },
-      });
+      const res = await this._get(path, { jql, fields, maxResults: 50 });
       if (res.ok) return res.json();
       const body = (await res.text()).slice(0, 300);
       lastError = new Error(`JIRA-Fehler ${res.status} (${path}): ${body}`);
@@ -92,5 +140,6 @@ const MOCK_JIRA = [
     receivedAt: new Date(Date.now() - 3 * 86400000).toISOString(),
     dueDate: new Date(Date.now() + 4 * 86400000).toISOString().slice(0, 10),
     webUrl: 'https://your-domain.atlassian.net/browse/ORG-42',
+    relevanceKey: 'status:In Arbeit|prio:|due:',
   },
 ];

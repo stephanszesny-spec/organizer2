@@ -1,6 +1,6 @@
 import * as db from './db.js';
 import { integrations } from './integrations/index.js';
-import { deriveTasks } from './llm/anthropic.js';
+import { deriveTasks, isChangeRelevant } from './llm/anthropic.js';
 
 let running = false;
 
@@ -12,7 +12,7 @@ let running = false;
 export async function runSync({ only } = {}) {
   if (running) return { skipped: true, reason: 'Sync läuft bereits' };
   running = true;
-  const result = { created: 0, skipped: 0, errors: [], bySource: {} };
+  const result = { created: 0, updated: 0, skipped: 0, errors: [], bySource: {} };
 
   try {
     const active = only ? integrations.filter((i) => i.id === only) : integrations;
@@ -25,14 +25,62 @@ export async function runSync({ only } = {}) {
 
         const derived = await deriveTasks(items);
         const itemById = new Map(items.map((it) => [it.id, it]));
+        result.bySource[integ.id].updated = 0;
 
         for (const task of derived) {
           const src = itemById.get(task.sourceItemId);
           if (!src) continue;
 
           const dedupeKey = src.id; // ein Todo pro Source-Item
-          if (db.findByDedupeKey(dedupeKey)) {
-            result.skipped++;
+          const incoming = src.receivedAt || null; // Zeitstempel (nur zur Info)
+          // "Betrifft mich"-Signatur. Fehlt sie (z.B. Mail/Teams), nehmen wir die
+          // stabile Item-ID -> dann gibt es kein Wiederauftauchen.
+          const incomingKey = src.relevanceKey || src.id;
+          const link = {
+            source: src.source,
+            type: src.type,
+            id: src.id,
+            subject: src.subject,
+            from: src.from || '',
+            snippet: src.snippet || '',
+            webUrl: src.webUrl || '',
+            receivedAt: src.receivedAt || null,
+            sentByUser: Boolean(src.sentByUser),
+          };
+
+          const existing = db.findByDedupeKey(dedupeKey);
+          if (existing) {
+            const prevKey = existing.relevanceKey;
+            const changed = prevKey != null && incomingKey !== prevKey;
+            if (changed) {
+              // Relevante Felder haben sich geändert. Bei aktivem LLM zusätzlich
+              // prüfen, ob die Änderung den Nutzer wirklich betrifft.
+              const relevant = await isChangeRelevant({
+                todo: existing,
+                item: src,
+                previousKey: prevKey,
+                newKey: incomingKey,
+              });
+              // Key immer mitziehen, damit dieselbe Änderung nicht erneut auslöst.
+              await db.applySourceState(existing.id, {
+                sourceUpdatedAt: incoming,
+                relevanceKey: incomingKey,
+                link,
+                resurface: relevant,
+              });
+              if (relevant) {
+                result.updated++;
+                result.bySource[integ.id].updated++;
+              } else {
+                result.skipped++;
+              }
+            } else {
+              // Keine relevante Änderung: nur Basiswert merken (kein Wiederauftauchen).
+              if (prevKey == null) {
+                await db.applySourceState(existing.id, { sourceUpdatedAt: incoming, relevanceKey: incomingKey });
+              }
+              result.skipped++;
+            }
             continue;
           }
 
@@ -45,26 +93,19 @@ export async function runSync({ only } = {}) {
             customer: task.customer || '',
             source: src.source,
             dedupeKey,
-            links: [
-              {
-                source: src.source,
-                type: src.type,
-                id: src.id,
-                subject: src.subject,
-                from: src.from || '',
-                snippet: src.snippet || '',
-                webUrl: src.webUrl || '',
-                receivedAt: src.receivedAt || null,
-                sentByUser: Boolean(src.sentByUser),
-              },
-            ],
+            sourceUpdatedAt: incoming,
+            relevanceKey: incomingKey,
+            links: [link],
           });
           result.created++;
           result.bySource[integ.id].created++;
         }
       } catch (err) {
-        console.error(`[sync] ${integ.id}: ${err.message}`);
-        result.errors.push({ source: integ.id, message: err.message });
+        // Bei Netzwerkfehlern (z.B. "fetch failed") steht der eigentliche Grund in err.cause
+        const cause = err.cause ? ` (Ursache: ${err.cause.code || ''} ${err.cause.message || err.cause})`.trimEnd() : '';
+        const message = `${err.message}${cause}`;
+        console.error(`[sync] ${integ.id}: ${message}`);
+        result.errors.push({ source: integ.id, message });
       }
     }
 

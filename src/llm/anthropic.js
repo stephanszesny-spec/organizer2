@@ -1,5 +1,20 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config.js';
+import { describeError } from '../util.js';
+
+/** Read-only Verbindungstest für die Claude-API (ruft nur Modell-Metadaten ab, keine Generierung). */
+export async function testLlm() {
+  if (!config.llm.enabled) {
+    return { ok: false, configured: false, message: 'Kein Anthropic API-Key gesetzt – Heuristik-Fallback aktiv.' };
+  }
+  try {
+    const c = getClient();
+    const model = await c.models.retrieve(config.llm.model);
+    return { ok: true, configured: true, message: `OK – Modell erreichbar: ${model.display_name || model.id || config.llm.model}` };
+  } catch (err) {
+    return { ok: false, configured: true, message: describeError(err) };
+  }
+}
 
 let client = null;
 function getClient() {
@@ -124,6 +139,42 @@ Du erhältst eine Suchanfrage und eine Liste von Todos.
 Gib die IDs der relevanten Todos zurück, nach Relevanz sortiert (relevanteste zuerst).
 Berücksichtige Bedeutung, Synonyme, verwandte Begriffe und Kontext – nicht nur exakte Wortübereinstimmungen.
 Gib nur wirklich passende Todos zurück. Antworte AUSSCHLIESSLICH mit JSON: { "ids": ["..."] }.`;
+
+/**
+ * Entscheidet, ob eine erkannte Änderung am Quell-Vorgang eine klare Auswirkung
+ * auf den Nutzer hat (= erledigtes Todo soll wieder auftauchen).
+ * Ohne API-Key: true – dann zählt bereits die Heuristik (Änderung der
+ * relevanten Felder wie Status) als relevant.
+ */
+export async function isChangeRelevant({ todo, item, previousKey, newKey }) {
+  const c = getClient();
+  if (!c) return true;
+
+  const system = `Du entscheidest, ob die Änderung an einem Vorgang eine klare Auswirkung auf den Nutzer hat bzw. sein Handeln erfordert.
+Antworte AUSSCHLIESSLICH mit JSON: {"relevant": true} oder {"relevant": false}.
+relevant=true nur, wenn der Nutzer wegen der Änderung tätig werden sollte (z.B. Status geändert/wieder geöffnet, ihm zugewiesen, Rückfrage/Antwort an ihn, neue ihn betreffende Information, Frist geändert).
+relevant=false bei rein kosmetischen Änderungen oder Aktivitäten anderer, die ihn nicht betreffen.`;
+
+  const content = `Aufgabe (Todo): ${todo.title}
+Notizen: ${todo.notes || '-'}
+Vorgang: ${item.subject}
+Kontext: ${item.snippet || '-'}
+Alter Stand: ${previousKey}
+Neuer Stand: ${newKey}`;
+
+  try {
+    const msg = await c.messages.create({
+      model: config.llm.model,
+      max_tokens: 50,
+      system,
+      messages: [{ role: 'user', content }],
+    });
+    const text = msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
+    return parseJson(text).relevant !== false;
+  } catch {
+    return true; // im Zweifel anzeigen
+  }
+}
 
 /**
  * LLM-gestützte semantische Suche. Liefert relevante Todo-IDs nach Relevanz.

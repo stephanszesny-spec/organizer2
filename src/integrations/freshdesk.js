@@ -1,5 +1,6 @@
 import { Integration } from './base.js';
 import { config } from '../config.js';
+import { describeError } from '../util.js';
 
 /**
  * Freshdesk via REST API v2 (Basic Auth: API-Key als Username, "X" als Passwort).
@@ -17,6 +18,26 @@ export class FreshdeskIntegration extends Integration {
   _authHeader() {
     const token = Buffer.from(`${config.freshdesk.apiKey}:X`).toString('base64');
     return `Basic ${token}`;
+  }
+
+  async testConnection() {
+    if (!this.isConfigured()) {
+      return { ok: false, configured: false, message: 'Nicht konfiguriert (Mock-Modus).' };
+    }
+    // GET /api/v2/agents/me: rein lesender Auth-/Verbindungstest.
+    try {
+      const base = `https://${config.freshdesk.domain}.freshdesk.com`;
+      const res = await fetch(`${base}/api/v2/agents/me`, {
+        headers: { Authorization: this._authHeader(), 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        return { ok: false, configured: true, status: res.status, message: `Freshdesk-Fehler ${res.status}: ${(await res.text()).slice(0, 200)}` };
+      }
+      const me = await res.json();
+      return { ok: true, configured: true, message: `OK – Agent: ${me.contact?.name || me.contact?.email || me.id}` };
+    } catch (err) {
+      return { ok: false, configured: true, message: describeError(err) };
+    }
   }
 
   async fetchItems() {
@@ -41,6 +62,8 @@ export class FreshdeskIntegration extends Integration {
       receivedAt: t.updated_at,
       dueDate: t.due_by ? t.due_by.slice(0, 10) : null,
       webUrl: `${base}/a/tickets/${t.id}`,
+      // "Betrifft mich"-Signatur: Status + Fälligkeit.
+      relevanceKey: `status:${t.status}|due:${t.due_by ? t.due_by.slice(0, 10) : ''}`,
     }));
   }
 }
@@ -58,5 +81,6 @@ const MOCK_FRESHDESK = [
     receivedAt: new Date(Date.now() - 1 * 86400000).toISOString(),
     dueDate: new Date(Date.now() + 1 * 86400000).toISOString().slice(0, 10),
     webUrl: 'https://your-domain.freshdesk.com/a/tickets/1051',
+    relevanceKey: 'status:2|due:',
   },
 ];

@@ -1,5 +1,6 @@
 import { Integration } from './base.js';
 import { config } from '../config.js';
+import { describeError } from '../util.js';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
@@ -48,6 +49,19 @@ export class M365MailIntegration extends Integration {
     const res = await fetch(`${GRAPH}${pathname}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) throw new Error(`Graph-Fehler ${res.status} (${pathname}): ${await res.text()}`);
     return res.json();
+  }
+
+  async testConnection() {
+    if (!this.isConfigured()) {
+      return { ok: false, configured: false, message: 'Nicht konfiguriert (Mock-Modus).' };
+    }
+    try {
+      const user = encodeURIComponent(config.m365.user);
+      const me = await this._graph(`/users/${user}?$select=id,displayName,mail`);
+      return { ok: true, configured: true, message: `OK – Postfach erreichbar: ${me.displayName || me.mail || me.id}` };
+    } catch (err) {
+      return { ok: false, configured: true, message: describeError(err) };
+    }
   }
 
   async fetchItems() {

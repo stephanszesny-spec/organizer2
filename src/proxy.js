@@ -1,26 +1,42 @@
 import 'dotenv/config';
 import net from 'node:net';
-import { setGlobalDispatcher, ProxyAgent } from 'undici';
+import fs from 'node:fs';
+import tls from 'node:tls';
+import { setGlobalDispatcher, Agent, ProxyAgent } from 'undici';
 
 /**
- * Firmennetz-Unterstützung mit automatischer Erkennung.
+ * Netzwerk-Setup für ausgehende fetch-Aufrufe (JIRA, M365, Freshdesk, Claude).
  *
- * Node/fetch nutzt System-Proxy-Einstellungen nicht automatisch. Ist in der .env
- * ein Proxy gesetzt (HTTPS_PROXY/HTTP_PROXY), prüfen wir beim Start einmalig, ob
- * dieser Proxy ERREICHBAR ist:
- *  - erreichbar (z.B. im Firmennetz)  -> alle ausgehenden fetch-Aufrufe gehen darüber
- *  - nicht erreichbar (z.B. zu Hause) -> direkte Verbindung, der Proxy wird ignoriert
+ * 1) Proxy (Firmennetz): Ist HTTPS_PROXY/HTTP_PROXY gesetzt, wird beim Start
+ *    geprüft, ob der Proxy erreichbar ist. Erreichbar -> nutzen; nicht
+ *    erreichbar (z.B. außerhalb des Firmennetzes) -> direkte Verbindung.
  *
- * So kann HTTPS_PROXY dauerhaft gesetzt bleiben und funktioniert an beiden Orten.
- *
- * Für TLS-Prüfung mit Firmen-Zertifikat: NODE_EXTRA_CA_CERTS auf die
- * Zertifikatsdatei setzen (siehe README / .env.example).
+ * 2) Zusätzliche CA: Wird HTTPS auf dem Rechner aufgebrochen (Antivirus/Endpoint-
+ *    Schutz, Firmen-Proxy mit TLS-Inspektion), kennt Node die Prüf-CA nicht
+ *    (Fehler UNABLE_TO_GET_ISSUER_CERT_LOCALLY). Dann die Root-CA als PEM-Datei
+ *    exportieren und in der .env CA_CERT_FILE (oder NODE_EXTRA_CA_CERTS) auf den
+ *    Pfad setzen – sie wird hier zur Vertrauensliste hinzugefügt.
  */
 const proxyUrl =
   process.env.HTTPS_PROXY ||
   process.env.https_proxy ||
   process.env.HTTP_PROXY ||
   process.env.http_proxy;
+
+const caFile = process.env.CA_CERT_FILE || process.env.NODE_EXTRA_CA_CERTS || '';
+
+// Zusätzliche CA laden (Node-Standardzertifikate + Firmen-/Antivirus-Root-CA)
+let ca;
+if (caFile) {
+  try {
+    const extra = fs.readFileSync(caFile, 'utf8');
+    ca = [...tls.rootCertificates, extra];
+    console.log(`  Zusätzliches CA-Zertifikat geladen: ${caFile}`);
+  } catch (err) {
+    console.log(`  CA-Zertifikat konnte nicht geladen werden (${caFile}): ${err.message}`);
+  }
+}
+const requestTls = ca ? { ca } : undefined;
 
 /** Prüft per TCP-Verbindung, ob host:port des Proxys erreichbar ist. */
 function proxyReachable(urlStr, timeoutMs = 2000) {
@@ -44,11 +60,14 @@ function proxyReachable(urlStr, timeoutMs = 2000) {
   });
 }
 
-if (proxyUrl) {
-  if (await proxyReachable(proxyUrl)) {
-    setGlobalDispatcher(new ProxyAgent(proxyUrl));
-    console.log(`  Proxy aktiv: ${proxyUrl}`);
-  } else {
+let dispatcher;
+if (proxyUrl && (await proxyReachable(proxyUrl))) {
+  dispatcher = new ProxyAgent({ uri: proxyUrl, requestTls });
+  console.log(`  Proxy aktiv: ${proxyUrl}`);
+} else {
+  if (proxyUrl) {
     console.log(`  Proxy ${proxyUrl} nicht erreichbar – direkte Verbindung (z.B. außerhalb des Firmennetzes).`);
   }
+  if (ca) dispatcher = new Agent({ connect: { ca } });
 }
+if (dispatcher) setGlobalDispatcher(dispatcher);

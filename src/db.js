@@ -51,6 +51,14 @@ function persist() {
 
 const now = () => new Date().toISOString();
 
+function normalizeComment(c) {
+  return {
+    id: c.id || crypto.randomUUID(),
+    text: (c.text || '').trim(),
+    createdAt: c.createdAt || now(),
+  };
+}
+
 function normalize(todo) {
   const t = {
     id: todo.id || crypto.randomUUID(),
@@ -59,6 +67,8 @@ function normalize(todo) {
     priority: ['high', 'medium', 'low'].includes(todo.priority) ? todo.priority : 'medium',
     dueDate: todo.dueDate || null,
     notes: todo.notes || '',
+    customer: (todo.customer || '').trim(),
+    comments: Array.isArray(todo.comments) ? todo.comments.map(normalizeComment) : [],
     order: typeof todo.order === 'number' ? todo.order : Date.now(),
     createdAt: todo.createdAt || now(),
     updatedAt: todo.updatedAt || now(),
@@ -107,6 +117,17 @@ export async function update(id, patch) {
   const merged = normalize({ ...todo, ...patch, id: todo.id, createdAt: todo.createdAt });
   merged.updatedAt = now();
   Object.assign(todo, merged);
+  await persist();
+  return todo;
+}
+
+export async function addComment(id, text) {
+  const todo = getById(id);
+  if (!todo) return null;
+  if (!text || !text.trim()) return todo;
+  const comment = normalizeComment({ text });
+  todo.comments.push(comment);
+  todo.updatedAt = now();
   await persist();
   return todo;
 }

@@ -22,12 +22,22 @@ const EXTRACT_SYSTEM = `Du bist ein Assistent, der Arbeits-Items (E-Mails, Teams
 
 Regeln:
 - Leite nur dann eine Aufgabe ab, wenn für den Nutzer wirklich eine Handlung nötig ist.
-- Kategorien: "strategic" (strategisch), "operative" (operativ), "sales" (Salesprozesse), "reminder" (Nachfassen/Erinnerung).
-- "reminder" verwendest du, wenn der Nutzer jemanden nachfassen oder an etwas erinnern muss – insbesondere bei vom Nutzer GESENDETEN Nachrichten ohne Antwort ("needsReply": true).
+- Kategorien: "strategic" (strategisch), "operative" (operativ), "sales" (Salesprozesse), "reminder".
+- WICHTIG – "reminder" gilt für Vorgänge, bei denen der Nutzer auf INPUT von
+  EXTERNEN/anderen Personen WARTET und ggf. nachfassen (einen Reminder senden)
+  muss. Das umfasst u.a.:
+    * an andere DELEGIERTE Aufgaben, deren Erledigung noch aussteht,
+    * vom Nutzer GESTELLTE Fragen/Anfragen, auf die noch keine Antwort vorliegt,
+    * jede vom Nutzer GESENDETE Nachricht ohne Antwort
+      ("sentByUser": true UND "needsReply": true).
+  Kurz: Der Ball liegt bei jemand anderem, der Nutzer wartet.
+- KEIN "reminder" für Aufgaben, die der Nutzer SELBST erledigen muss (der Ball
+  liegt beim Nutzer) – diese gehören in "strategic", "operative" oder "sales".
 - Priorität: "high", "medium" oder "low".
 - "dueDate" nur als ISO-Datum (YYYY-MM-DD), wenn ein Termin erkennbar ist, sonst null.
 - "title" ist eine kurze, handlungsorientierte Beschreibung (max. ~80 Zeichen).
 - "notes" enthält knappen Kontext (1-3 Sätze).
+- "customer": Name des Kunden/der Firma, falls erkennbar, sonst "".
 - Antworte AUSSCHLIESSLICH mit JSON, keine Erklärungen.`;
 
 /**
@@ -54,7 +64,8 @@ Antworte mit JSON in genau dieser Form:
       "title": "...",
       "priority": "high|medium|low",
       "dueDate": "YYYY-MM-DD oder null",
-      "notes": "..."
+      "notes": "...",
+      "customer": "Kundenname oder leerer String"
     }
   ]
 }`;
@@ -108,20 +119,63 @@ Verknüpfte Vorgänge: ${JSON.stringify((links || []).map((l) => ({ subject: l.s
   return { subject: parsed.subject || '', body: parsed.body || '', generatedBy: config.llm.draftModel };
 }
 
+const SEARCH_SYSTEM = `Du bist eine semantische Suchfunktion für eine Todo-App.
+Du erhältst eine Suchanfrage und eine Liste von Todos.
+Gib die IDs der relevanten Todos zurück, nach Relevanz sortiert (relevanteste zuerst).
+Berücksichtige Bedeutung, Synonyme, verwandte Begriffe und Kontext – nicht nur exakte Wortübereinstimmungen.
+Gib nur wirklich passende Todos zurück. Antworte AUSSCHLIESSLICH mit JSON: { "ids": ["..."] }.`;
+
+/**
+ * LLM-gestützte semantische Suche. Liefert relevante Todo-IDs nach Relevanz.
+ * Ohne API-Key: null (Aufrufer nutzt dann die Text-Suche).
+ */
+export async function searchTodos(query, todos) {
+  const c = getClient();
+  if (!c) return null;
+
+  const compact = todos.map((t) => ({
+    id: t.id,
+    title: t.title,
+    notes: (t.notes || '').slice(0, 300),
+    customer: t.customer || '',
+    category: t.category,
+    comments: (t.comments || []).map((c) => c.text),
+    links: (t.links || []).map((l) => l.subject).filter(Boolean),
+  }));
+
+  const msg = await c.messages.create({
+    model: config.llm.model,
+    max_tokens: 1000,
+    system: SEARCH_SYSTEM,
+    messages: [
+      {
+        role: 'user',
+        content: `Suchanfrage: "${query}"\n\nTodos (JSON):\n${JSON.stringify(compact)}\n\nAntworte mit { "ids": [...] }.`,
+      },
+    ],
+  });
+  const text = msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
+  const parsed = parseJson(text);
+  return Array.isArray(parsed.ids) ? parsed.ids : [];
+}
+
 /**
  * Heuristischer Fallback ohne API-Key, damit der Sync-Flow auch ohne
  * Anthropic-Key sinnvolle (wenn auch simple) Ergebnisse liefert.
  */
 function heuristicDerive(items) {
   return items.map((it) => {
-    const isReminder = it.sentByUser && it.needsReply;
+    // Reminder, wenn der Nutzer auf externen Input wartet: selbst gesendet
+    // (delegiert oder Frage gestellt) und noch keine Antwort erhalten.
+    const isReminder = Boolean(it.sentByUser && it.needsReply);
     return {
       sourceItemId: it.id,
-      category: isReminder ? 'reminder' : it.source === 'jira' || it.source === 'freshdesk' ? 'operative' : 'operative',
+      category: isReminder ? 'reminder' : 'operative',
       title: isReminder ? `Nachfassen: ${it.subject}` : it.subject,
       priority: /dringend|asap|urgent|wichtig/i.test(`${it.subject} ${it.snippet || ''}`) ? 'high' : 'medium',
       dueDate: null,
       notes: it.snippet || '',
+      customer: '',
     };
   });
 }

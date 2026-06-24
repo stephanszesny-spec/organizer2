@@ -7,8 +7,15 @@ LLM (Anthropic Claude) automatisch Aufgaben und Reminder ab.
 
 - **4 Bereiche / Spalten:** Strategische Todos · Operative Todos · Salesprozesse · Reminder
 - **Drag & Drop** (Desktop *und* Touch/Mobile) zum Hinzufügen, Verschieben, Sortieren
-- **Felder pro Todo:** Kurzbeschreibung, Priorität, Ziel-Datum, Notizen, letzte Aktualisierung
-- **Reminder** mit Intervall (Standard **7 Tage**) und Fälligkeits-Hinweis 🔔
+- **Felder pro Todo:** Kurzbeschreibung, Kunde, Priorität, Ziel-Datum, Notizen, letzte Aktualisierung
+- **Kommentare** pro Todo (zeitgestempelt) – nach der Erstellung beliebig ergänzbar
+- **Sortierung pro Bereich** nach letzter Änderung, Priorität oder Ziel-Datum
+- **Globale Suche** (Text + optional KI-gestützt, wenn LLM angebunden)
+- **Reminder** mit Intervall (Standard **7 Tage**) und Fälligkeits-Hinweis 🔔.
+  Beim **automatischen Sync** landen in „Reminder" Vorgänge, bei denen du auf
+  **Input von externen/anderen wartest** und ggf. nachfassen musst – z. B.
+  delegierte Aufgaben oder eine von dir gestellte, noch unbeantwortete Frage.
+  Nicht: deine eigenen Aufgaben (der Ball liegt bei dir).
 - **Verknüpfte Vorgänge:** beim Öffnen eines Todos siehst du die zugehörigen
   Mails/Nachrichten/Tickets und kannst sie per Klick im Original öffnen
 - **Entwürfe generieren & senden:** Mail/Teams-Nachricht per KI auf Basis eines Todos
@@ -127,6 +134,39 @@ FRESHDESK_API_KEY=...               # Profil → API-Key
 SYNC_INTERVAL_MINUTES=15
 ```
 Setzt einen Hintergrund-Sync alle 15 Minuten. `0` = nur manueller Sync per Button.
+
+---
+
+## 7. Automatisch starten beim Anmelden (Windows)
+
+Damit die App nicht jedes Mal manuell per `npm start` gestartet werden muss,
+liegt im Ordner `scripts\` ein Ein-Klick-Installer:
+
+1. Einmalig sicherstellen, dass die Abhängigkeiten installiert sind
+   (`npm install` im Projektordner) und `node` im PATH ist.
+2. **Doppelklick auf `scripts\install-autostart.bat`.**
+   Das legt eine Verknüpfung im Windows-Autostart-Ordner an, die den Server
+   bei jeder Anmeldung **unsichtbar im Hintergrund** startet (kein Fenster).
+3. Danach ist die App jederzeit unter **http://localhost:3000** erreichbar –
+   lege dir am besten ein Lesezeichen an.
+
+Weitere Helfer im Ordner `scripts\`:
+
+| Datei | Zweck |
+|-------|-------|
+| `install-autostart.bat`   | Autostart einrichten (und sofort starten) |
+| `uninstall-autostart.bat` | Autostart wieder entfernen |
+| `run-hidden.vbs`          | Startet den Server unsichtbar (vom Autostart genutzt) |
+| `stop.bat`                | Laufenden Hintergrund-Server beenden |
+
+Läuft etwas nicht, steht die Server-Ausgabe zur Fehlersuche in
+`organizer2.log` im Projektordner. Zum manuellen Start ohne Autostart genügt
+weiterhin ein Doppelklick auf `scripts\run-hidden.vbs` (unsichtbar) oder
+`npm start` (mit Konsolenfenster).
+
+> Hinweis: Der Autostart greift bei der **Anmeldung** des Benutzers. Wenn der
+> PC läuft, aber niemand angemeldet ist, startet die App nicht – das ist für
+> den Zugriff vom Handy im Heimnetz aber der Normalfall.
 
 ---
 

@@ -9,8 +9,28 @@ const CATEGORIES = [
 
 const SOURCE_ICON = { manual: '📝', m365mail: '✉️', teams: '💬', jira: '🟦', freshdesk: '🎫', email: '✉️' };
 
+const SORT_OPTIONS = [
+  { id: 'manual', label: 'Manuell (Drag&Drop)' },
+  { id: 'updated', label: 'Letzte Änderung' },
+  { id: 'priority', label: 'Priorität' },
+  { id: 'dueDate', label: 'Ziel-Datum' },
+];
+const PRIO_WEIGHT = { high: 0, medium: 1, low: 2 };
+
 let todos = [];
 let editingId = null;
+// Sortierpräferenz pro Spalte (in localStorage gespeichert)
+let sortPref = loadSortPref();
+// Suchzustand: query = aktueller Text; matchIds = Treffer-IDs (Set) oder null
+let search = { query: '', matchIds: null, mode: null, llmEnabled: false };
+
+function loadSortPref() {
+  try { return JSON.parse(localStorage.getItem('organizer2.sort') || '{}'); }
+  catch { return {}; }
+}
+function saveSortPref() {
+  localStorage.setItem('organizer2.sort', JSON.stringify(sortPref));
+}
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const api = async (url, opts = {}) => {
@@ -41,14 +61,31 @@ function buildBoard() {
     const col = document.createElement('section');
     col.className = 'column';
     col.dataset.cat = cat.id;
+    const current = sortPref[cat.id] || 'manual';
+    const opts = SORT_OPTIONS.map(
+      (o) => `<option value="${o.id}" ${o.id === current ? 'selected' : ''}>↕ ${o.label}</option>`,
+    ).join('');
     col.innerHTML = `
       <div class="column-head">
         <h2>${cat.label}</h2>
-        <span class="count" data-count="${cat.id}">0</span>
+        <div class="head-right">
+          <select class="col-sort ${current !== 'manual' ? 'active' : ''}" data-sort="${cat.id}" title="Sortierung">${opts}</select>
+          <span class="count" data-count="${cat.id}">0</span>
+        </div>
       </div>
       <div class="cards" data-cards="${cat.id}"></div>`;
     board.appendChild(col);
   }
+  // Sortier-Auswahl pro Spalte
+  document.querySelectorAll('[data-sort]').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      const cat = sel.dataset.sort;
+      sortPref[cat] = sel.value;
+      saveSortPref();
+      sel.classList.toggle('active', sel.value !== 'manual');
+      render();
+    });
+  });
   // Drag&Drop pro Spalte (funktioniert auch auf Touch dank SortableJS)
   document.querySelectorAll('[data-cards]').forEach((zone) => {
     Sortable.create(zone, {
@@ -83,6 +120,9 @@ function cardHtml(todo) {
   const prioLabel = { high: 'Hoch', medium: 'Mittel', low: 'Niedrig' }[todo.priority];
   const tags = [`<span class="tag prio-${todo.priority}">${prioLabel}</span>`, dueTag(todo)];
 
+  if (todo.customer) tags.push(`<span class="tag">👤 ${escapeHtml(todo.customer)}</span>`);
+  if (todo.comments && todo.comments.length) tags.push(`<span class="tag">💬 ${todo.comments.length}</span>`);
+
   if (todo.category === 'reminder' && todo.reminder) {
     const r = todo.reminder;
     if (r.due) tags.push(`<span class="tag reminder">🔔 fällig</span>`);
@@ -103,12 +143,39 @@ function cardHtml(todo) {
     </div>`;
 }
 
+function sortComparator(mode) {
+  switch (mode) {
+    case 'updated':
+      return (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt);
+    case 'priority':
+      return (a, b) => (PRIO_WEIGHT[a.priority] - PRIO_WEIGHT[b.priority]) || (a.order - b.order);
+    case 'dueDate':
+      // frühestes Datum zuerst, Todos ohne Datum ans Ende
+      return (a, b) => {
+        if (!a.dueDate && !b.dueDate) return a.order - b.order;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return new Date(a.dueDate) - new Date(b.dueDate);
+      };
+    default:
+      return (a, b) => a.order - b.order;
+  }
+}
+
 function render() {
   for (const cat of CATEGORIES) {
     const zone = $(`[data-cards="${cat.id}"]`);
-    const items = todos
+    const mode = sortPref[cat.id] || 'manual';
+    let items = todos
       .filter((t) => t.category === cat.id)
-      .sort((a, b) => a.order - b.order);
+      .filter((t) => (search.matchIds ? search.matchIds.has(t.id) : true));
+    if (search.matchIds && search.mode === 'llm') {
+      // LLM liefert nach Relevanz sortierte IDs -> diese Reihenfolge übernehmen
+      const rank = new Map([...search.matchIds].map((id, i) => [id, i]));
+      items.sort((a, b) => rank.get(a.id) - rank.get(b.id));
+    } else {
+      items.sort(sortComparator(mode));
+    }
     zone.innerHTML = items.map(cardHtml).join('');
     $(`[data-count="${cat.id}"]`).textContent = items.length;
   }
@@ -132,6 +199,13 @@ function escapeHtml(s) {
 
 // ---------------- Drag&Drop ----------------
 async function onDragEnd(evt) {
+  // Während einer aktiven Suche ist die Ansicht gefiltert -> Reihenfolge nicht
+  // verlässlich speicherbar. Erst Suche zurücksetzen.
+  if (search.matchIds) {
+    toast('Suche zum Verschieben zurücksetzen', 'err');
+    await reload();
+    return;
+  }
   const targetCat = evt.to.dataset.cards;
   const fromCat = evt.from.dataset.cards;
   const collect = (zone) => Array.from(zone.querySelectorAll('.card')).map((c) => c.dataset.id);
@@ -152,6 +226,7 @@ function openCreate() {
   editingId = null;
   $('#modalTitle').textContent = 'Neues Todo';
   $('#f-title').value = '';
+  $('#f-customer').value = '';
   $('#f-category').value = 'operative';
   $('#f-priority').value = 'medium';
   $('#f-dueDate').value = '';
@@ -161,7 +236,9 @@ function openCreate() {
   $('#deleteBtn').classList.add('hidden');
   $('#draftBtn').classList.add('hidden');
   $('#linksSection').classList.add('hidden');
+  $('#commentsSection').classList.add('hidden'); // erst nach Erstellung
   $('#reminderInfo').classList.add('hidden');
+  fillCustomerList();
   toggleIntervalField();
   showModal('#modal');
   $('#f-title').focus();
@@ -173,6 +250,7 @@ function openEdit(id) {
   editingId = id;
   $('#modalTitle').textContent = 'Todo bearbeiten';
   $('#f-title').value = t.title;
+  $('#f-customer').value = t.customer || '';
   $('#f-category').value = t.category;
   $('#f-priority').value = t.priority;
   $('#f-dueDate').value = t.dueDate ? t.dueDate.slice(0, 10) : '';
@@ -181,8 +259,10 @@ function openEdit(id) {
   $('#f-updatedAt').textContent = t.updatedAt ? new Date(t.updatedAt).toLocaleString('de-DE') : '–';
   $('#deleteBtn').classList.remove('hidden');
   $('#draftBtn').classList.remove('hidden');
+  fillCustomerList();
   toggleIntervalField();
   renderReminderInfo(t);
+  renderComments(t);
   renderLinks(t);
   showModal('#modal');
 }
@@ -215,6 +295,52 @@ function renderReminderInfo(t) {
   });
 }
 
+function renderComments(t) {
+  const section = $('#commentsSection');
+  const list = $('#commentsList');
+  section.classList.remove('hidden'); // nach Erstellung immer verfügbar
+  const comments = t.comments || [];
+  if (!comments.length) {
+    list.innerHTML = '<li class="comments-empty">Noch keine Kommentare.</li>';
+  } else {
+    list.innerHTML = comments
+      .slice()
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      .map(
+        (c) => `<li class="comment-item">
+          <div class="c-text">${escapeHtml(c.text)}</div>
+          <div class="c-time">🕒 ${new Date(c.createdAt).toLocaleString('de-DE')}</div>
+        </li>`,
+      )
+      .join('');
+  }
+  $('#commentInput').value = '';
+}
+
+async function addComment() {
+  if (!editingId) return;
+  const input = $('#commentInput');
+  const text = input.value.trim();
+  if (!text) return;
+  try {
+    const updated = await api(`/api/todos/${editingId}/comments`, { method: 'POST', body: { text } });
+    // lokalen Stand aktualisieren, ohne Modal zu schließen
+    const idx = todos.findIndex((x) => x.id === editingId);
+    if (idx !== -1) todos[idx] = updated;
+    renderComments(updated);
+    render();
+    toast('Kommentar hinzugefügt', 'ok');
+  } catch (e) {
+    toast('Kommentar fehlgeschlagen: ' + e.message, 'err');
+  }
+}
+
+function fillCustomerList() {
+  const dl = $('#customerList');
+  const names = [...new Set(todos.map((t) => t.customer).filter(Boolean))].sort();
+  dl.innerHTML = names.map((n) => `<option value="${escapeHtml(n)}"></option>`).join('');
+}
+
 function renderLinks(t) {
   const section = $('#linksSection');
   const list = $('#linksList');
@@ -241,6 +367,7 @@ function renderLinks(t) {
 async function saveTodo() {
   const body = {
     title: $('#f-title').value.trim(),
+    customer: $('#f-customer').value.trim(),
     category: $('#f-category').value,
     priority: $('#f-priority').value,
     dueDate: $('#f-dueDate').value || null,
@@ -327,6 +454,75 @@ async function sendMessage() {
   }
 }
 
+// ---------------- Suche ----------------
+function localMatchIds(query) {
+  const q = query.toLowerCase();
+  const ids = new Set();
+  for (const t of todos) {
+    const hay = [
+      t.title,
+      t.notes,
+      t.customer,
+      ...(t.comments || []).map((c) => c.text),
+      ...(t.links || []).flatMap((l) => [l.subject, l.from]),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    if (hay.includes(q)) ids.add(t.id);
+  }
+  return ids;
+}
+
+function runTextSearch(query) {
+  search.query = query;
+  search.matchIds = localMatchIds(query);
+  search.mode = 'text';
+  $('#searchClear').classList.remove('hidden');
+  render();
+  showSearchBanner();
+}
+
+async function runAiSearch() {
+  const query = $('#searchInput').value.trim();
+  if (!query) return;
+  const btn = $('#aiSearchBtn');
+  btn.disabled = true; btn.textContent = '… KI';
+  try {
+    const r = await api('/api/search', { method: 'POST', body: { query } });
+    search.query = query;
+    search.matchIds = new Set(r.ids); // bei 'llm' nach Relevanz sortiert
+    search.mode = r.mode;
+    $('#searchClear').classList.remove('hidden');
+    render();
+    showSearchBanner();
+  } catch (e) {
+    toast('KI-Suche fehlgeschlagen: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '✨ KI';
+  }
+}
+
+function showSearchBanner() {
+  const banner = $('#searchBanner');
+  if (!search.matchIds) { banner.classList.add('hidden'); return; }
+  const n = search.matchIds.size;
+  const ai = search.mode === 'llm';
+  banner.className = `search-banner ${ai ? 'ai' : ''}`;
+  banner.innerHTML =
+    `${ai ? '✨ KI-Suche' : '🔎 Suche'}: <strong>${n}</strong> Treffer für „${escapeHtml(search.query)}"` +
+    `${ai ? ' (nach Relevanz)' : ''} <button id="bannerClear">Zurücksetzen ✕</button>`;
+  $('#bannerClear').addEventListener('click', clearSearch);
+}
+
+function clearSearch() {
+  search = { query: '', matchIds: null, mode: null, llmEnabled: search.llmEnabled };
+  $('#searchInput').value = '';
+  $('#searchClear').classList.add('hidden');
+  $('#searchBanner').classList.add('hidden');
+  render();
+}
+
 // ---------------- Sync & Status ----------------
 async function doSync() {
   const btn = $('#syncBtn');
@@ -353,6 +549,10 @@ async function loadStatus() {
       .join('');
     const sync = s.lastSync ? `Letzter Sync: ${new Date(s.lastSync).toLocaleString('de-DE')}` : 'Noch kein Sync';
     bar.innerHTML = `${llm}${integs}<span class="chip" style="margin-left:auto">${sync}</span>`;
+    // KI-Suchbutton nur zeigen, wenn LLM angebunden ist
+    search.llmEnabled = s.llm.enabled;
+    $('#aiSearchBtn').classList.toggle('hidden', !s.llm.enabled);
+    $('#searchInput').placeholder = s.llm.enabled ? 'Suchen… (Enter = KI-Suche)' : 'Suchen…';
   } catch (e) { /* still */ }
 }
 
@@ -374,9 +574,30 @@ function init() {
   $('#saveBtn').addEventListener('click', saveTodo);
   $('#deleteBtn').addEventListener('click', deleteTodo);
   $('#draftBtn').addEventListener('click', openDraft);
+  $('#addCommentBtn').addEventListener('click', addComment);
+  $('#commentInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addComment(); }
+  });
   $('#generateBtn').addEventListener('click', generateDraft);
   $('#sendBtn').addEventListener('click', sendMessage);
   $('#f-category').addEventListener('change', toggleIntervalField);
+  // Suche: Live-Textfilter beim Tippen, KI-Suche per Button oder Enter
+  const searchInput = $('#searchInput');
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.trim();
+    if (!q) clearSearch();
+    else runTextSearch(q);
+  });
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && search.llmEnabled && searchInput.value.trim()) {
+      e.preventDefault();
+      runAiSearch();
+    } else if (e.key === 'Escape') {
+      clearSearch();
+    }
+  });
+  $('#aiSearchBtn').addEventListener('click', runAiSearch);
+  $('#searchClear').addEventListener('click', clearSearch);
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => closeModal('#modal')));
   document.querySelectorAll('[data-close-draft]').forEach((b) => b.addEventListener('click', () => closeModal('#draftModal')));
   $('#reminderBell').addEventListener('click', () => {

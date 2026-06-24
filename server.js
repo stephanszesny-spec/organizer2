@@ -6,7 +6,7 @@ import * as db from './src/db.js';
 import { reminderStatus, dueReminders } from './src/reminders.js';
 import { runSync, startAutoSync } from './src/sync.js';
 import { integrationStatus, getIntegration } from './src/integrations/index.js';
-import { draftMessage } from './src/llm/anthropic.js';
+import { draftMessage, searchTodos } from './src/llm/anthropic.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -68,6 +68,15 @@ app.delete('/api/todos/:id', wrap(async (req, res) => {
   res.status(204).end();
 }));
 
+// --- Kommentare (zeitgestempelt) ---
+app.post('/api/todos/:id/comments', wrap(async (req, res) => {
+  const text = (req.body?.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'text ist erforderlich' });
+  const todo = await db.addComment(req.params.id, text);
+  if (!todo) return res.status(404).json({ error: 'Nicht gefunden' });
+  res.status(201).json(decorate(todo));
+}));
+
 // --- Drag&Drop: Reihenfolge/Kategorie aktualisieren ---
 app.post('/api/reorder', wrap(async (req, res) => {
   const { category, orderedIds } = req.body;
@@ -88,6 +97,41 @@ app.post('/api/todos/:id/reminder-sent', wrap(async (req, res) => {
   const todo = await db.update(req.params.id, { lastReminderSentAt: new Date().toISOString() });
   if (!todo) return res.status(404).json({ error: 'Nicht gefunden' });
   res.json(decorate(todo));
+}));
+
+// --- Suche (LLM-gestützt, mit Text-Fallback) ---
+app.post('/api/search', wrap(async (req, res) => {
+  const query = (req.body?.query || '').trim();
+  if (!query) return res.json({ mode: 'empty', ids: [] });
+  const all = db.getAll();
+
+  if (config.llm.enabled) {
+    try {
+      const ids = await searchTodos(query, all);
+      if (ids) return res.json({ mode: 'llm', ids });
+    } catch (err) {
+      console.error('[search] LLM-Fehler, nutze Text-Fallback:', err.message);
+    }
+  }
+
+  // Text-Fallback: Treffer in Titel, Notizen oder verknüpften Vorgängen.
+  const q = query.toLowerCase();
+  const ids = all
+    .filter((t) => {
+      const hay = [
+        t.title,
+        t.notes,
+        t.customer,
+        ...(t.comments || []).map((c) => c.text),
+        ...(t.links || []).flatMap((l) => [l.subject, l.from]),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    })
+    .map((t) => t.id);
+  res.json({ mode: 'text', ids });
 }));
 
 // --- Sync ---

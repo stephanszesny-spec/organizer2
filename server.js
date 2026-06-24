@@ -6,8 +6,8 @@ import { config, CATEGORIES } from './src/config.js';
 import * as db from './src/db.js';
 import { reminderStatus, dueReminders } from './src/reminders.js';
 import { runSync, startAutoSync } from './src/sync.js';
-import { integrationStatus, getIntegration } from './src/integrations/index.js';
-import { draftMessage, searchTodos } from './src/llm/anthropic.js';
+import { integrations, integrationStatus, getIntegration } from './src/integrations/index.js';
+import { draftMessage, searchTodos, testLlm } from './src/llm/anthropic.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -36,6 +36,28 @@ app.get('/api/status', wrap(async (_req, res) => {
     lastSync: db.getMeta().lastSync,
     dataFile: config.dataFile,
   });
+}));
+
+// --- Verbindungstest aller Schnittstellen (rein lesend) ---
+app.get('/api/test', wrap(async (_req, res) => {
+  const results = [];
+  for (const integ of integrations) {
+    let r;
+    try {
+      r = await integ.testConnection();
+    } catch (err) {
+      r = { ok: false, configured: integ.isConfigured(), message: err.message };
+    }
+    results.push({ id: integ.id, label: integ.label, ...r });
+  }
+  let llm;
+  try {
+    llm = await testLlm();
+  } catch (err) {
+    llm = { ok: false, configured: config.llm.enabled, message: err.message };
+  }
+  results.push({ id: 'llm', label: 'Claude (LLM)', ...llm });
+  res.json({ results });
 }));
 
 // --- Todos CRUD ---

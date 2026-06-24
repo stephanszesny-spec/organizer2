@@ -1,5 +1,6 @@
 import { Integration } from './base.js';
 import { config } from '../config.js';
+import { describeError } from '../util.js';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
@@ -16,6 +17,35 @@ export class TeamsIntegration extends Integration {
 
   isConfigured() {
     return config.m365.configured;
+  }
+
+  async testConnection() {
+    if (!this.isConfigured()) {
+      return { ok: false, configured: false, message: 'Nicht konfiguriert (Mock-Modus).' };
+    }
+    // Teams nutzt dieselbe M365-App-Registrierung. Wir prüfen die Token-Beschaffung.
+    try {
+      const res = await fetch(`https://login.microsoftonline.com/${config.m365.tenantId}/oauth2/v2.0/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: config.m365.clientId,
+          client_secret: config.m365.clientSecret,
+          scope: 'https://graph.microsoft.com/.default',
+          grant_type: 'client_credentials',
+        }),
+      });
+      if (!res.ok) {
+        return { ok: false, configured: true, message: `M365 Token-Fehler ${res.status}: ${(await res.text()).slice(0, 200)}` };
+      }
+      return {
+        ok: true,
+        configured: true,
+        message: 'OK – M365-Token erhalten. Hinweis: Auslesen von Teams-Nachrichten ist noch ein Gerüst (zusätzliche Graph-Berechtigungen nötig).',
+      };
+    } catch (err) {
+      return { ok: false, configured: true, message: describeError(err) };
+    }
   }
 
   async fetchItems() {

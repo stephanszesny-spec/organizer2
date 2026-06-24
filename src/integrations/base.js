@@ -39,4 +39,15 @@ export class Integration {
   async sendMessage(/* { to, subject, body } */) {
     throw new Error(`${this.label}: Versand nicht unterstützt`);
   }
+
+  /**
+   * Read-only Verbindungstest. Liefert { ok, configured, message }.
+   * Konkrete Integrationen überschreiben dies mit einem echten Test-Aufruf.
+   */
+  async testConnection() {
+    if (!this.isConfigured()) {
+      return { ok: false, configured: false, message: 'Nicht konfiguriert (Mock-Modus).' };
+    }
+    return { ok: false, configured: true, message: 'Verbindungstest für diese Quelle nicht implementiert.' };
+  }
 }

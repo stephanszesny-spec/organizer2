@@ -1,5 +1,6 @@
 import { Integration } from './base.js';
 import { config } from '../config.js';
+import { describeError } from '../util.js';
 
 /**
  * JIRA Cloud via REST API v3 (Basic Auth: E-Mail + API-Token).
@@ -30,6 +31,23 @@ export class JiraIntegration extends Integration {
   _authHeader() {
     const token = Buffer.from(`${config.jira.email}:${config.jira.apiToken}`).toString('base64');
     return `Basic ${token}`;
+  }
+
+  async testConnection() {
+    if (!this.isConfigured()) {
+      return { ok: false, configured: false, message: 'Nicht konfiguriert (Mock-Modus).' };
+    }
+    // GET /rest/api/3/myself: leichter, rein lesender Auth-/Verbindungstest.
+    try {
+      const res = await this._get('/rest/api/3/myself', {});
+      if (!res.ok) {
+        return { ok: false, configured: true, status: res.status, message: `JIRA-Fehler ${res.status}: ${(await res.text()).slice(0, 200)}` };
+      }
+      const me = await res.json();
+      return { ok: true, configured: true, message: `OK – angemeldet als ${me.displayName || me.emailAddress || 'unbekannt'}` };
+    } catch (err) {
+      return { ok: false, configured: true, message: describeError(err) };
+    }
   }
 
   async fetchItems() {

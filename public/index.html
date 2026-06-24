@@ -22,6 +22,7 @@
       <button id="aiSearchBtn" class="btn btn-ghost hidden" title="KI-gestützte Suche">✨ KI</button>
     </div>
     <div class="topbar-right">
+      <button id="menuBtn" class="bell" title="Einstellungen & Verbindungstest">⚙</button>
       <button id="reminderBell" class="bell" title="Fällige Reminder">
         🔔<span id="reminderCount" class="badge hidden">0</span>
       </button>
@@ -145,6 +146,24 @@
       <div class="modal-foot">
         <div class="spacer"></div>
         <button id="sendBtn" class="btn btn-primary">Senden</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Menü: Verbindungstest -->
+  <div id="testModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Einstellungen &amp; Verbindungstest</h2>
+        <button class="icon-btn" data-close-test>✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="meta-line">Prüft Erreichbarkeit und Anmeldung aller Schnittstellen – rein lesend, ohne Änderungen an deinen Daten.</p>
+        <ul id="testList" class="test-list"></ul>
+      </div>
+      <div class="modal-foot">
+        <div class="spacer"></div>
+        <button id="runTestBtn" class="btn btn-primary">Alle testen</button>
       </div>
     </div>
   </div>

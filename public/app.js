@@ -544,6 +544,40 @@ async function doSync() {
   }
 }
 
+// ---------------- Verbindungstest ----------------
+function openTest() {
+  $('#testList').innerHTML = '<li class="test-empty">Noch nicht getestet – auf „Alle testen" klicken.</li>';
+  showModal('#testModal');
+}
+
+function testRowHtml(x) {
+  const state = !x.configured ? 'na' : x.ok ? 'ok' : 'err';
+  const icon = state === 'ok' ? '✓' : state === 'err' ? '✗' : '–';
+  return `<li class="test-row ${state}">
+    <span class="t-ico">${icon}</span>
+    <span class="t-body">
+      <span class="t-label">${escapeHtml(x.label)}</span>
+      <span class="t-msg">${escapeHtml(x.message || '')}</span>
+    </span>
+  </li>`;
+}
+
+async function runTests() {
+  const btn = $('#runTestBtn');
+  btn.disabled = true;
+  btn.textContent = '… teste';
+  $('#testList').innerHTML = '<li class="test-row pending"><span class="t-ico">⟳</span><span class="t-body"><span class="t-label">Teste Verbindungen…</span></span></li>';
+  try {
+    const r = await api('/api/test');
+    $('#testList').innerHTML = r.results.map(testRowHtml).join('');
+  } catch (e) {
+    $('#testList').innerHTML = `<li class="test-row err"><span class="t-ico">✗</span><span class="t-body"><span class="t-label">Test fehlgeschlagen</span><span class="t-msg">${escapeHtml(e.message)}</span></span></li>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Alle testen';
+  }
+}
+
 async function loadStatus() {
   try {
     const s = await api('/api/status');
@@ -585,6 +619,9 @@ function init() {
   });
   $('#generateBtn').addEventListener('click', generateDraft);
   $('#sendBtn').addEventListener('click', sendMessage);
+  $('#menuBtn').addEventListener('click', openTest);
+  $('#runTestBtn').addEventListener('click', runTests);
+  document.querySelectorAll('[data-close-test]').forEach((b) => b.addEventListener('click', () => closeModal('#testModal')));
   $('#f-category').addEventListener('change', toggleIntervalField);
   // Suche: Live-Textfilter beim Tippen, KI-Suche per Button oder Enter
   const searchInput = $('#searchInput');

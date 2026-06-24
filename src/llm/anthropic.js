@@ -1,5 +1,20 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config.js';
+import { describeError } from '../util.js';
+
+/** Read-only Verbindungstest für die Claude-API (ruft nur Modell-Metadaten ab, keine Generierung). */
+export async function testLlm() {
+  if (!config.llm.enabled) {
+    return { ok: false, configured: false, message: 'Kein Anthropic API-Key gesetzt – Heuristik-Fallback aktiv.' };
+  }
+  try {
+    const c = getClient();
+    const model = await c.models.retrieve(config.llm.model);
+    return { ok: true, configured: true, message: `OK – Modell erreichbar: ${model.display_name || model.id || config.llm.model}` };
+  } catch (err) {
+    return { ok: false, configured: true, message: describeError(err) };
+  }
+}
 
 let client = null;
 function getClient() {

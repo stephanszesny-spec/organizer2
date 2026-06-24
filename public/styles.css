@@ -253,6 +253,26 @@ html, body {
 .link-item .li-sub { font-size: 13px; font-weight: 600; }
 .link-item .li-from { font-size: 12px; color: var(--text-dim); }
 
+/* ---- Verbindungstest ---- */
+.test-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.test-empty { font-size: 13px; color: var(--text-dim); }
+.test-row {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 4px solid var(--text-dim); border-radius: 8px; padding: 10px 12px;
+}
+.test-row.ok { border-left-color: var(--low); }
+.test-row.err { border-left-color: var(--danger); }
+.test-row.na { border-left-color: var(--text-dim); }
+.test-row.pending { border-left-color: var(--primary); }
+.test-row .t-ico { font-size: 16px; font-weight: 700; line-height: 1.4; }
+.test-row.ok .t-ico { color: var(--low); }
+.test-row.err .t-ico { color: var(--danger); }
+.test-row.na .t-ico { color: var(--text-dim); }
+.test-row .t-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.test-row .t-label { font-size: 14px; font-weight: 600; }
+.test-row .t-msg { font-size: 12px; color: var(--text-dim); word-break: break-word; white-space: pre-wrap; }
+
 /* ---- Toast ---- */
 .toast {
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);

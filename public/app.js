@@ -530,8 +530,13 @@ async function doSync() {
   try {
     const r = await api('/api/sync', { method: 'POST' });
     await reload();
-    const errs = r.errors?.length ? ` (${r.errors.length} Fehler)` : '';
-    toast(`Sync: ${r.created} neu, ${r.skipped} bekannt${errs}`, r.errors?.length ? 'err' : 'ok');
+    if (r.errors?.length) {
+      // Erste konkrete Fehlermeldung mit anzeigen (z.B. JIRA-Statuscode)
+      const first = r.errors[0];
+      toast(`Sync: ${r.created} neu, ${r.skipped} bekannt – Fehler (${first.source}): ${first.message}`, 'err');
+    } else {
+      toast(`Sync: ${r.created} neu, ${r.skipped} bekannt`, 'ok');
+    }
   } catch (e) {
     toast('Sync fehlgeschlagen: ' + e.message, 'err');
   } finally {

@@ -63,6 +63,7 @@ export async function runSync({ only } = {}) {
           result.bySource[integ.id].created++;
         }
       } catch (err) {
+        console.error(`[sync] ${integ.id}: ${err.message}`);
         result.errors.push({ source: integ.id, message: err.message });
       }
     }

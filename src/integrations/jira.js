@@ -20,15 +20,10 @@ export class JiraIntegration extends Integration {
 
   async fetchItems() {
     if (!this.isConfigured()) return MOCK_JIRA;
-    const url = new URL('/rest/api/3/search', config.jira.baseUrl);
-    url.searchParams.set('jql', config.jira.jql);
-    url.searchParams.set('maxResults', '50');
-    url.searchParams.set('fields', 'summary,description,priority,duedate,updated,status');
-    const res = await fetch(url, {
-      headers: { Authorization: this._authHeader(), Accept: 'application/json' },
-    });
-    if (!res.ok) throw new Error(`JIRA-Fehler ${res.status}: ${await res.text()}`);
-    const json = await res.json();
+    const json = await this._search(
+      config.jira.jql,
+      'summary,description,priority,duedate,updated,status',
+    );
     return (json.issues || []).map((issue) => ({
       id: `jira:${issue.key}`,
       source: 'jira',
@@ -42,6 +37,31 @@ export class JiraIntegration extends Integration {
       dueDate: issue.fields.duedate || null,
       webUrl: new URL(`/browse/${issue.key}`, config.jira.baseUrl).toString(),
     }));
+  }
+
+  /**
+   * JIRA-Suche. Bevorzugt den aktuellen Cloud-Endpunkt /rest/api/3/search/jql;
+   * fällt nur bei "Endpunkt nicht vorhanden" (404/410) auf den alten
+   * /rest/api/3/search zurück (z.B. ältere Server/Data-Center-Instanzen).
+   */
+  async _search(jql, fields) {
+    const paths = ['/rest/api/3/search/jql', '/rest/api/3/search'];
+    let lastError;
+    for (const path of paths) {
+      const url = new URL(path, config.jira.baseUrl);
+      url.searchParams.set('jql', jql);
+      url.searchParams.set('maxResults', '50');
+      url.searchParams.set('fields', fields);
+      const res = await fetch(url, {
+        headers: { Authorization: this._authHeader(), Accept: 'application/json' },
+      });
+      if (res.ok) return res.json();
+      const body = (await res.text()).slice(0, 300);
+      lastError = new Error(`JIRA-Fehler ${res.status} (${path}): ${body}`);
+      // Nur bei "gibt es nicht" den Alt-Endpunkt versuchen; bei 401/403/400 sofort abbrechen.
+      if (res.status !== 404 && res.status !== 410) break;
+    }
+    throw lastError;
   }
 }
 

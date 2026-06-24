@@ -22,12 +22,20 @@ const EXTRACT_SYSTEM = `Du bist ein Assistent, der Arbeits-Items (E-Mails, Teams
 
 Regeln:
 - Leite nur dann eine Aufgabe ab, wenn für den Nutzer wirklich eine Handlung nötig ist.
-- Kategorien: "strategic" (strategisch), "operative" (operativ), "sales" (Salesprozesse), "reminder" (Nachfassen/Erinnerung).
-- "reminder" verwendest du, wenn der Nutzer jemanden nachfassen oder an etwas erinnern muss – insbesondere bei vom Nutzer GESENDETEN Nachrichten ohne Antwort ("needsReply": true).
+- Kategorien: "strategic" (strategisch), "operative" (operativ), "sales" (Salesprozesse), "reminder".
+- WICHTIG – "reminder" ist eng definiert: Verwende es AUSSCHLIESSLICH, wenn der
+  Nutzer eine Aufgabe an eine andere Person DELEGIERT hat oder auf eine
+  Antwort/Zulieferung von jemand anderem WARTET und diese Person ggf. erneut
+  erinnern (einen Reminder senden) muss. Typischer Fall: vom Nutzer GESENDETE
+  Nachricht ohne Antwort ("sentByUser": true UND "needsReply": true), oder eine
+  Mail, in der der Nutzer jemanden um etwas gebeten hat und noch keine Reaktion vorliegt.
+- KEIN "reminder" für Aufgaben, die der Nutzer SELBST erledigen muss – diese
+  gehören in "strategic", "operative" oder "sales".
 - Priorität: "high", "medium" oder "low".
 - "dueDate" nur als ISO-Datum (YYYY-MM-DD), wenn ein Termin erkennbar ist, sonst null.
 - "title" ist eine kurze, handlungsorientierte Beschreibung (max. ~80 Zeichen).
 - "notes" enthält knappen Kontext (1-3 Sätze).
+- "customer": Name des Kunden/der Firma, falls erkennbar, sonst "".
 - Antworte AUSSCHLIESSLICH mit JSON, keine Erklärungen.`;
 
 /**
@@ -54,7 +62,8 @@ Antworte mit JSON in genau dieser Form:
       "title": "...",
       "priority": "high|medium|low",
       "dueDate": "YYYY-MM-DD oder null",
-      "notes": "..."
+      "notes": "...",
+      "customer": "Kundenname oder leerer String"
     }
   ]
 }`;
@@ -126,7 +135,9 @@ export async function searchTodos(query, todos) {
     id: t.id,
     title: t.title,
     notes: (t.notes || '').slice(0, 300),
+    customer: t.customer || '',
     category: t.category,
+    comments: (t.comments || []).map((c) => c.text),
     links: (t.links || []).map((l) => l.subject).filter(Boolean),
   }));
 
@@ -152,14 +163,17 @@ export async function searchTodos(query, todos) {
  */
 function heuristicDerive(items) {
   return items.map((it) => {
-    const isReminder = it.sentByUser && it.needsReply;
+    // Reminder nur bei delegierten/auf Antwort wartenden Vorgängen
+    // (selbst gesendet, noch keine Antwort).
+    const isReminder = Boolean(it.sentByUser && it.needsReply);
     return {
       sourceItemId: it.id,
-      category: isReminder ? 'reminder' : it.source === 'jira' || it.source === 'freshdesk' ? 'operative' : 'operative',
+      category: isReminder ? 'reminder' : 'operative',
       title: isReminder ? `Nachfassen: ${it.subject}` : it.subject,
       priority: /dringend|asap|urgent|wichtig/i.test(`${it.subject} ${it.snippet || ''}`) ? 'high' : 'medium',
       dueDate: null,
       notes: it.snippet || '',
+      customer: '',
     };
   });
 }

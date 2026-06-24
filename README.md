@@ -7,8 +7,14 @@ LLM (Anthropic Claude) automatisch Aufgaben und Reminder ab.
 
 - **4 Bereiche / Spalten:** Strategische Todos · Operative Todos · Salesprozesse · Reminder
 - **Drag & Drop** (Desktop *und* Touch/Mobile) zum Hinzufügen, Verschieben, Sortieren
-- **Felder pro Todo:** Kurzbeschreibung, Priorität, Ziel-Datum, Notizen, letzte Aktualisierung
-- **Reminder** mit Intervall (Standard **7 Tage**) und Fälligkeits-Hinweis 🔔
+- **Felder pro Todo:** Kurzbeschreibung, Kunde, Priorität, Ziel-Datum, Notizen, letzte Aktualisierung
+- **Kommentare** pro Todo (zeitgestempelt) – nach der Erstellung beliebig ergänzbar
+- **Sortierung pro Bereich** nach letzter Änderung, Priorität oder Ziel-Datum
+- **Globale Suche** (Text + optional KI-gestützt, wenn LLM angebunden)
+- **Reminder** mit Intervall (Standard **7 Tage**) und Fälligkeits-Hinweis 🔔.
+  Beim **automatischen Sync** landen in „Reminder" ausschließlich Vorgänge, die
+  du an andere **delegiert** hast bzw. bei denen du auf eine Antwort wartest und
+  ggf. nachfassen musst – nicht deine eigenen Aufgaben.
 - **Verknüpfte Vorgänge:** beim Öffnen eines Todos siehst du die zugehörigen
   Mails/Nachrichten/Tickets und kannst sie per Klick im Original öffnen
 - **Entwürfe generieren & senden:** Mail/Teams-Nachricht per KI auf Basis eines Todos

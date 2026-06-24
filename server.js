@@ -68,6 +68,15 @@ app.delete('/api/todos/:id', wrap(async (req, res) => {
   res.status(204).end();
 }));
 
+// --- Kommentare (zeitgestempelt) ---
+app.post('/api/todos/:id/comments', wrap(async (req, res) => {
+  const text = (req.body?.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'text ist erforderlich' });
+  const todo = await db.addComment(req.params.id, text);
+  if (!todo) return res.status(404).json({ error: 'Nicht gefunden' });
+  res.status(201).json(decorate(todo));
+}));
+
 // --- Drag&Drop: Reihenfolge/Kategorie aktualisieren ---
 app.post('/api/reorder', wrap(async (req, res) => {
   const { category, orderedIds } = req.body;
@@ -109,7 +118,13 @@ app.post('/api/search', wrap(async (req, res) => {
   const q = query.toLowerCase();
   const ids = all
     .filter((t) => {
-      const hay = [t.title, t.notes, ...(t.links || []).flatMap((l) => [l.subject, l.from])]
+      const hay = [
+        t.title,
+        t.notes,
+        t.customer,
+        ...(t.comments || []).map((c) => c.text),
+        ...(t.links || []).flatMap((l) => [l.subject, l.from]),
+      ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();

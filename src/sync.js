@@ -42,6 +42,7 @@ export async function runSync({ only } = {}) {
             priority: task.priority || 'medium',
             dueDate: task.dueDate || src.dueDate || null,
             notes: task.notes || src.snippet || '',
+            customer: task.customer || '',
             source: src.source,
             dedupeKey,
             links: [

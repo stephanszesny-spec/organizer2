@@ -47,6 +47,11 @@
           <input type="text" id="f-title" maxlength="200" placeholder="Was ist zu tun?" />
         </label>
 
+        <label>Kunde
+          <input type="text" id="f-customer" maxlength="120" placeholder="Kunde / Firma (optional)" list="customerList" />
+          <datalist id="customerList"></datalist>
+        </label>
+
         <div class="row">
           <label>Bereich
             <select id="f-category">
@@ -77,6 +82,16 @@
         <label>Notizen
           <textarea id="f-notes" rows="4" placeholder="Kontext, Details, nächste Schritte…"></textarea>
         </label>
+
+        <!-- Kommentare (zeitgestempelt, nach Erstellung hinzufügbar) -->
+        <div id="commentsSection" class="comments-section hidden">
+          <h3>Kommentare</h3>
+          <ul id="commentsList" class="comments-list"></ul>
+          <div class="comment-add">
+            <input type="text" id="commentInput" maxlength="500" placeholder="Kommentar hinzufügen…" />
+            <button id="addCommentBtn" class="btn btn-ghost">+ Kommentar</button>
+          </div>
+        </div>
 
         <div id="reminderInfo" class="reminder-info hidden"></div>
 

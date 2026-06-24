@@ -120,6 +120,9 @@ function cardHtml(todo) {
   const prioLabel = { high: 'Hoch', medium: 'Mittel', low: 'Niedrig' }[todo.priority];
   const tags = [`<span class="tag prio-${todo.priority}">${prioLabel}</span>`, dueTag(todo)];
 
+  if (todo.customer) tags.push(`<span class="tag">👤 ${escapeHtml(todo.customer)}</span>`);
+  if (todo.comments && todo.comments.length) tags.push(`<span class="tag">💬 ${todo.comments.length}</span>`);
+
   if (todo.category === 'reminder' && todo.reminder) {
     const r = todo.reminder;
     if (r.due) tags.push(`<span class="tag reminder">🔔 fällig</span>`);
@@ -223,6 +226,7 @@ function openCreate() {
   editingId = null;
   $('#modalTitle').textContent = 'Neues Todo';
   $('#f-title').value = '';
+  $('#f-customer').value = '';
   $('#f-category').value = 'operative';
   $('#f-priority').value = 'medium';
   $('#f-dueDate').value = '';
@@ -232,7 +236,9 @@ function openCreate() {
   $('#deleteBtn').classList.add('hidden');
   $('#draftBtn').classList.add('hidden');
   $('#linksSection').classList.add('hidden');
+  $('#commentsSection').classList.add('hidden'); // erst nach Erstellung
   $('#reminderInfo').classList.add('hidden');
+  fillCustomerList();
   toggleIntervalField();
   showModal('#modal');
   $('#f-title').focus();
@@ -244,6 +250,7 @@ function openEdit(id) {
   editingId = id;
   $('#modalTitle').textContent = 'Todo bearbeiten';
   $('#f-title').value = t.title;
+  $('#f-customer').value = t.customer || '';
   $('#f-category').value = t.category;
   $('#f-priority').value = t.priority;
   $('#f-dueDate').value = t.dueDate ? t.dueDate.slice(0, 10) : '';
@@ -252,8 +259,10 @@ function openEdit(id) {
   $('#f-updatedAt').textContent = t.updatedAt ? new Date(t.updatedAt).toLocaleString('de-DE') : '–';
   $('#deleteBtn').classList.remove('hidden');
   $('#draftBtn').classList.remove('hidden');
+  fillCustomerList();
   toggleIntervalField();
   renderReminderInfo(t);
+  renderComments(t);
   renderLinks(t);
   showModal('#modal');
 }
@@ -286,6 +295,52 @@ function renderReminderInfo(t) {
   });
 }
 
+function renderComments(t) {
+  const section = $('#commentsSection');
+  const list = $('#commentsList');
+  section.classList.remove('hidden'); // nach Erstellung immer verfügbar
+  const comments = t.comments || [];
+  if (!comments.length) {
+    list.innerHTML = '<li class="comments-empty">Noch keine Kommentare.</li>';
+  } else {
+    list.innerHTML = comments
+      .slice()
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      .map(
+        (c) => `<li class="comment-item">
+          <div class="c-text">${escapeHtml(c.text)}</div>
+          <div class="c-time">🕒 ${new Date(c.createdAt).toLocaleString('de-DE')}</div>
+        </li>`,
+      )
+      .join('');
+  }
+  $('#commentInput').value = '';
+}
+
+async function addComment() {
+  if (!editingId) return;
+  const input = $('#commentInput');
+  const text = input.value.trim();
+  if (!text) return;
+  try {
+    const updated = await api(`/api/todos/${editingId}/comments`, { method: 'POST', body: { text } });
+    // lokalen Stand aktualisieren, ohne Modal zu schließen
+    const idx = todos.findIndex((x) => x.id === editingId);
+    if (idx !== -1) todos[idx] = updated;
+    renderComments(updated);
+    render();
+    toast('Kommentar hinzugefügt', 'ok');
+  } catch (e) {
+    toast('Kommentar fehlgeschlagen: ' + e.message, 'err');
+  }
+}
+
+function fillCustomerList() {
+  const dl = $('#customerList');
+  const names = [...new Set(todos.map((t) => t.customer).filter(Boolean))].sort();
+  dl.innerHTML = names.map((n) => `<option value="${escapeHtml(n)}"></option>`).join('');
+}
+
 function renderLinks(t) {
   const section = $('#linksSection');
   const list = $('#linksList');
@@ -312,6 +367,7 @@ function renderLinks(t) {
 async function saveTodo() {
   const body = {
     title: $('#f-title').value.trim(),
+    customer: $('#f-customer').value.trim(),
     category: $('#f-category').value,
     priority: $('#f-priority').value,
     dueDate: $('#f-dueDate').value || null,
@@ -403,7 +459,13 @@ function localMatchIds(query) {
   const q = query.toLowerCase();
   const ids = new Set();
   for (const t of todos) {
-    const hay = [t.title, t.notes, ...(t.links || []).flatMap((l) => [l.subject, l.from])]
+    const hay = [
+      t.title,
+      t.notes,
+      t.customer,
+      ...(t.comments || []).map((c) => c.text),
+      ...(t.links || []).flatMap((l) => [l.subject, l.from]),
+    ]
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
@@ -512,6 +574,10 @@ function init() {
   $('#saveBtn').addEventListener('click', saveTodo);
   $('#deleteBtn').addEventListener('click', deleteTodo);
   $('#draftBtn').addEventListener('click', openDraft);
+  $('#addCommentBtn').addEventListener('click', addComment);
+  $('#commentInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addComment(); }
+  });
   $('#generateBtn').addEventListener('click', generateDraft);
   $('#sendBtn').addEventListener('click', sendMessage);
   $('#f-category').addEventListener('change', toggleIntervalField);

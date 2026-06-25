@@ -2,6 +2,7 @@ import 'dotenv/config';
 import net from 'node:net';
 import fs from 'node:fs';
 import tls from 'node:tls';
+import crypto from 'node:crypto';
 import { setGlobalDispatcher, Agent, ProxyAgent } from 'undici';
 
 /**
@@ -23,18 +24,29 @@ const proxyUrl =
   process.env.HTTP_PROXY ||
   process.env.http_proxy;
 
-const caFile = process.env.CA_CERT_FILE || process.env.NODE_EXTRA_CA_CERTS || '';
+const caFiles = (process.env.CA_CERT_FILE || process.env.NODE_EXTRA_CA_CERTS || '')
+  .split(/[;,]/)
+  .map((s) => s.trim())
+  .filter(Boolean);
 
-// Zusätzliche CA laden (Node-Standardzertifikate + Firmen-/Antivirus-Root-CA)
+// Zusätzliche CA(s) laden. undici akzeptiert nur PEM – daher DER-Dateien (so
+// exportiert Windows die .crt meist) hier automatisch nach PEM konvertieren.
+// PEM-Bundles (mehrere Zertifikate) bleiben unverändert. Mehrere Pfade per ";"/"," möglich.
 let ca;
-if (caFile) {
-  try {
-    const extra = fs.readFileSync(caFile, 'utf8');
-    ca = [...tls.rootCertificates, extra];
-    console.log(`  Zusätzliches CA-Zertifikat geladen: ${caFile}`);
-  } catch (err) {
-    console.log(`  CA-Zertifikat konnte nicht geladen werden (${caFile}): ${err.message}`);
+if (caFiles.length) {
+  const extra = [];
+  for (const f of caFiles) {
+    try {
+      const raw = fs.readFileSync(f);
+      const looksPem = raw.toString('latin1').includes('-----BEGIN CERTIFICATE-----');
+      const pem = looksPem ? raw.toString('utf8') : new crypto.X509Certificate(raw).toString();
+      extra.push(pem);
+      console.log(`  Zusätzliches CA-Zertifikat geladen: ${f}${looksPem ? '' : ' (DER → PEM konvertiert)'}`);
+    } catch (err) {
+      console.log(`  CA-Zertifikat konnte nicht geladen werden (${f}): ${err.message}`);
+    }
   }
+  if (extra.length) ca = [...tls.rootCertificates, ...extra];
 }
 const requestTls = ca ? { ca } : undefined;
 

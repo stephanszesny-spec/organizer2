@@ -20,13 +20,23 @@ export class FreshdeskIntegration extends Integration {
     return `Basic ${token}`;
   }
 
+  /** Basis-URL aus der Domain – toleriert volle URLs ("https://x.freshdesk.com") und Subdomains ("x"). */
+  _base() {
+    const sub = (config.freshdesk.domain || '')
+      .trim()
+      .replace(/^https?:\/\//i, '')
+      .replace(/\/.*$/, '')
+      .replace(/\.freshdesk\.com$/i, '');
+    return `https://${sub}.freshdesk.com`;
+  }
+
   async testConnection() {
     if (!this.isConfigured()) {
       return { ok: false, configured: false, message: 'Nicht konfiguriert (Mock-Modus).' };
     }
     // GET /api/v2/agents/me: rein lesender Auth-/Verbindungstest.
     try {
-      const base = `https://${config.freshdesk.domain}.freshdesk.com`;
+      const base = this._base();
       const res = await fetch(`${base}/api/v2/agents/me`, {
         headers: { Authorization: this._authHeader(), 'Content-Type': 'application/json' },
       });
@@ -42,7 +52,7 @@ export class FreshdeskIntegration extends Integration {
 
   async fetchItems() {
     if (!this.isConfigured()) return MOCK_FRESHDESK;
-    const base = `https://${config.freshdesk.domain}.freshdesk.com`;
+    const base = this._base();
     // "me" = der zur API-Key gehörende Agent; Status < 4 = nicht resolved/closed.
     const url = `${base}/api/v2/tickets?filter=new_and_my_open&per_page=50`;
     const res = await fetch(url, {

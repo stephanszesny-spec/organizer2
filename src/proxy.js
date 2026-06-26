@@ -8,15 +8,14 @@ import { setGlobalDispatcher, Agent, ProxyAgent } from 'undici';
 /**
  * Netzwerk-Setup für ausgehende fetch-Aufrufe (JIRA, M365, Freshdesk, Claude).
  *
- * 1) Proxy (Firmennetz): Ist HTTPS_PROXY/HTTP_PROXY gesetzt, wird beim Start
+ * 1) Vertrauensanker: Node-Standard (Mozilla) + der BETRIEBSSYSTEM-Speicher.
+ *    Damit vertraut die App genau dem, was Browser/Outlook auch nutzen – inkl.
+ *    firmeneigener bzw. von Antivirus/Zscaler installierter Root-/Zwischen-CAs.
+ *    Optional zusätzlich CA_CERT_FILE (PEM oder DER; mehrere per ";"/",").
+ *
+ * 2) Proxy (Firmennetz): Ist HTTPS_PROXY/HTTP_PROXY gesetzt, wird beim Start
  *    geprüft, ob der Proxy erreichbar ist. Erreichbar -> nutzen; nicht
  *    erreichbar (z.B. außerhalb des Firmennetzes) -> direkte Verbindung.
- *
- * 2) Zusätzliche CA: Wird HTTPS auf dem Rechner aufgebrochen (Antivirus/Endpoint-
- *    Schutz, Firmen-Proxy mit TLS-Inspektion), kennt Node die Prüf-CA nicht
- *    (Fehler UNABLE_TO_GET_ISSUER_CERT_LOCALLY). Dann die Root-CA als PEM-Datei
- *    exportieren und in der .env CA_CERT_FILE (oder NODE_EXTRA_CA_CERTS) auf den
- *    Pfad setzen – sie wird hier zur Vertrauensliste hinzugefügt.
  */
 const proxyUrl =
   process.env.HTTPS_PROXY ||
@@ -29,26 +28,38 @@ const caFiles = (process.env.CA_CERT_FILE || process.env.NODE_EXTRA_CA_CERTS || 
   .map((s) => s.trim())
   .filter(Boolean);
 
-// Zusätzliche CA(s) laden. undici akzeptiert nur PEM – daher DER-Dateien (so
-// exportiert Windows die .crt meist) hier automatisch nach PEM konvertieren.
-// PEM-Bundles (mehrere Zertifikate) bleiben unverändert. Mehrere Pfade per ";"/"," möglich.
-let ca;
-if (caFiles.length) {
-  const extra = [];
-  for (const f of caFiles) {
-    try {
-      const raw = fs.readFileSync(f);
-      const looksPem = raw.toString('latin1').includes('-----BEGIN CERTIFICATE-----');
-      const pem = looksPem ? raw.toString('utf8') : new crypto.X509Certificate(raw).toString();
-      extra.push(pem);
-      console.log(`  Zusätzliches CA-Zertifikat geladen: ${f}${looksPem ? '' : ' (DER → PEM konvertiert)'}`);
-    } catch (err) {
-      console.log(`  CA-Zertifikat konnte nicht geladen werden (${f}): ${err.message}`);
+// --- Vertrauensanker aufbauen ---
+const ca = [...tls.rootCertificates];
+
+// Betriebssystem-Zertifikatspeicher einbinden (Windows/macOS/Linux), falls die
+// Node-Version es unterstützt (>= 22.15 / 23). Enthält die im System installierten
+// Firmen-/Zscaler-/Antivirus-CAs -> löst TLS-Aufbruch ohne manuelle Dateien.
+try {
+  if (typeof tls.getCACertificates === 'function') {
+    const sys = tls.getCACertificates('system') || [];
+    if (sys.length) {
+      ca.push(...sys);
+      console.log(`  System-Zertifikatspeicher eingebunden: ${sys.length} Zertifikate`);
     }
   }
-  if (extra.length) ca = [...tls.rootCertificates, ...extra];
+} catch (err) {
+  console.log(`  System-Zertifikatspeicher nicht verfügbar: ${err.message}`);
 }
-const requestTls = ca ? { ca } : undefined;
+
+// Optionale CA-Dateien. undici akzeptiert nur PEM -> DER automatisch konvertieren.
+for (const f of caFiles) {
+  try {
+    const raw = fs.readFileSync(f);
+    const looksPem = raw.toString('latin1').includes('-----BEGIN CERTIFICATE-----');
+    const pem = looksPem ? raw.toString('utf8') : new crypto.X509Certificate(raw).toString();
+    ca.push(pem);
+    console.log(`  Zusätzliches CA-Zertifikat geladen: ${f}${looksPem ? '' : ' (DER → PEM konvertiert)'}`);
+  } catch (err) {
+    console.log(`  CA-Zertifikat konnte nicht geladen werden (${f}): ${err.message}`);
+  }
+}
+
+const requestTls = { ca };
 
 /** Prüft per TCP-Verbindung, ob host:port des Proxys erreichbar ist. */
 function proxyReachable(urlStr, timeoutMs = 2000) {
@@ -80,6 +91,6 @@ if (proxyUrl && (await proxyReachable(proxyUrl))) {
   if (proxyUrl) {
     console.log(`  Proxy ${proxyUrl} nicht erreichbar – direkte Verbindung (z.B. außerhalb des Firmennetzes).`);
   }
-  if (ca) dispatcher = new Agent({ connect: { ca } });
+  dispatcher = new Agent({ connect: { ca } });
 }
-if (dispatcher) setGlobalDispatcher(dispatcher);
+setGlobalDispatcher(dispatcher);

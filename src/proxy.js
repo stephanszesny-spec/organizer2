@@ -3,6 +3,7 @@ import net from 'node:net';
 import fs from 'node:fs';
 import tls from 'node:tls';
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { setGlobalDispatcher, Agent, ProxyAgent } from 'undici';
 
 /**
@@ -31,9 +32,8 @@ const caFiles = (process.env.CA_CERT_FILE || process.env.NODE_EXTRA_CA_CERTS || 
 // --- Vertrauensanker aufbauen ---
 const ca = [...tls.rootCertificates];
 
-// Betriebssystem-Zertifikatspeicher einbinden (Windows/macOS/Linux), falls die
-// Node-Version es unterstützt (>= 22.15 / 23). Enthält die im System installierten
-// Firmen-/Zscaler-/Antivirus-CAs -> löst TLS-Aufbruch ohne manuelle Dateien.
+// Betriebssystem-Zertifikatspeicher einbinden (Node >= 22.15). Liefert auf
+// Windows allerdings nur einen Teil (i.d.R. LocalMachine\Root).
 try {
   if (typeof tls.getCACertificates === 'function') {
     const sys = tls.getCACertificates('system') || [];
@@ -44,6 +44,33 @@ try {
   }
 } catch (err) {
   console.log(`  System-Zertifikatspeicher nicht verfügbar: ${err.message}`);
+}
+
+// Windows: ALLE relevanten Speicher per PowerShell auslesen (Root + Zwischen-CAs,
+// LocalMachine + CurrentUser) – genau das, was Browser/Outlook vertrauen. Damit
+// werden auch Zscaler-/Antivirus-CAs erfasst, die Node oben nicht liefert.
+if (process.platform === 'win32') {
+  try {
+    const cmd =
+      "$ErrorActionPreference='SilentlyContinue';" +
+      "$s='Cert:\\LocalMachine\\Root','Cert:\\LocalMachine\\CA','Cert:\\LocalMachine\\AuthRoot'," +
+      "'Cert:\\CurrentUser\\Root','Cert:\\CurrentUser\\CA';" +
+      "Get-ChildItem $s | ForEach-Object { '-----BEGIN CERTIFICATE-----';" +
+      "[Convert]::ToBase64String($_.RawData,'InsertLineBreaks');'-----END CERTIFICATE-----' }";
+    const out = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', cmd], {
+      encoding: 'utf8',
+      timeout: 20000,
+      maxBuffer: 64 * 1024 * 1024,
+      windowsHide: true,
+    });
+    const winCerts = out.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+    if (winCerts.length) {
+      ca.push(...winCerts);
+      console.log(`  Windows-Zertifikatspeicher (alle Stores) eingebunden: ${winCerts.length} Zertifikate`);
+    }
+  } catch (err) {
+    console.log(`  Windows-Zertifikatspeicher konnte nicht gelesen werden: ${err.message}`);
+  }
 }
 
 // Optionale CA-Dateien. undici akzeptiert nur PEM -> DER automatisch konvertieren.

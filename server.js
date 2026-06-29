@@ -108,6 +108,19 @@ app.post('/api/lanes/reorder', wrap(async (req, res) => {
   res.json(await db.reorderLanes(req.body.orderedIds));
 }));
 
+// --- Technologien (im Einstellungsmenü pflegbar) ---
+app.get('/api/technologies', wrap(async (_req, res) => {
+  res.json(db.getTechnologies());
+}));
+app.post('/api/technologies', wrap(async (req, res) => {
+  const name = (req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name ist erforderlich' });
+  res.status(201).json(await db.addTechnology(name));
+}));
+app.delete('/api/technologies/:name', wrap(async (req, res) => {
+  res.json(await db.removeTechnology(decodeURIComponent(req.params.name)));
+}));
+
 // --- Todos CRUD ---
 app.get('/api/todos', wrap(async (_req, res) => {
   res.json(db.getAll().map(decorate));

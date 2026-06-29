@@ -98,6 +98,12 @@
           </div>
         </div>
 
+        <!-- Technologien (optional, im ⚙-Menü pflegbar) -->
+        <div id="techSection" class="tech-section">
+          <h3>Technologien</h3>
+          <div id="techPicker" class="tech-picker"></div>
+        </div>
+
         <!-- Abhängigkeiten zu anderen Todos -->
         <div id="depsSection" class="deps-section">
           <h3>Abhängigkeiten</h3>
@@ -214,6 +220,17 @@
         <button class="icon-btn" data-close-test>✕</button>
       </div>
       <div class="modal-body">
+        <div class="tech-manager">
+          <h3>Technologien verwalten</h3>
+          <p class="meta-line">Diese Liste steht in jedem Todo zum Anhaken bereit.</p>
+          <ul id="techList" class="tech-list"></ul>
+          <div class="comment-add">
+            <input type="text" id="techInput" maxlength="60" placeholder="Technologie hinzufügen…" />
+            <button id="addTechBtn" class="btn btn-ghost" type="button">+ Hinzufügen</button>
+          </div>
+        </div>
+        <hr class="modal-sep" />
+        <h3 class="section-h">Verbindungstest</h3>
         <p class="meta-line">Prüft Erreichbarkeit und Anmeldung aller Schnittstellen – rein lesend, ohne Änderungen an deinen Daten.</p>
         <ul id="testList" class="test-list"></ul>
       </div>

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { config, DEFAULT_LANES, LANE_FIELDS, DEFAULT_REMINDER_INTERVAL_DAYS } from './config.js';
+import { config, DEFAULT_LANES, LANE_FIELDS, DEFAULT_TECHNOLOGIES, DEFAULT_REMINDER_INTERVAL_DAYS } from './config.js';
 
 /**
  * Persistenz: eine einzelne JSON-Datei (z.B. im OneDrive-Ordner).
@@ -10,7 +10,7 @@ import { config, DEFAULT_LANES, LANE_FIELDS, DEFAULT_REMINDER_INTERVAL_DAYS } fr
  * - Schreibvorgänge werden serialisiert.
  */
 
-const EMPTY = { version: 2, lanes: [], todos: [], meta: { lastSync: null } };
+const EMPTY = { version: 2, lanes: [], technologies: [], todos: [], meta: { lastSync: null } };
 
 let state = structuredClone(EMPTY);
 let writeChain = Promise.resolve();
@@ -38,6 +38,7 @@ export async function load() {
   } else {
     state.lanes = state.lanes.map((l, i) => normalizeLane(l, i));
   }
+  if (!Array.isArray(state.technologies)) state.technologies = [...DEFAULT_TECHNOLOGIES];
   // Verwaiste Todos (Lane gelöscht) auf erste Lane umhängen
   const laneIds = new Set(state.lanes.map((l) => l.id));
   const fallback = getLanes()[0]?.id;
@@ -133,6 +134,28 @@ export async function reorderLanes(orderedIds) {
   return getLanes();
 }
 
+// ---------------- Technologien ----------------
+export function getTechnologies() {
+  return [...state.technologies].sort((a, b) => a.localeCompare(b, 'de'));
+}
+export async function addTechnology(name) {
+  const n = (name || '').trim();
+  if (n && !state.technologies.some((t) => t.toLowerCase() === n.toLowerCase())) {
+    state.technologies.push(n);
+    await persist();
+  }
+  return getTechnologies();
+}
+export async function removeTechnology(name) {
+  state.technologies = state.technologies.filter((t) => t !== name);
+  // Auch aus allen Todos entfernen, damit nichts Verwaistes zurückbleibt.
+  for (const todo of state.todos) {
+    if (todo.technologies?.includes(name)) todo.technologies = todo.technologies.filter((x) => x !== name);
+  }
+  await persist();
+  return getTechnologies();
+}
+
 // ---------------- Todos ----------------
 function normalizeComment(c) {
   return { id: c.id || crypto.randomUUID(), text: (c.text || '').trim(), createdAt: c.createdAt || now() };
@@ -167,6 +190,9 @@ function normalize(todo) {
     checklist: Array.isArray(todo.checklist) ? todo.checklist.map(normalizeChecklistItem) : [],
     dependsOn: Array.isArray(todo.dependsOn)
       ? [...new Set(todo.dependsOn.filter((x) => typeof x === 'string' && x !== id))]
+      : [],
+    technologies: Array.isArray(todo.technologies)
+      ? [...new Set(todo.technologies.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim()))]
       : [],
     comments: Array.isArray(todo.comments) ? todo.comments.map(normalizeComment) : [],
     order: typeof todo.order === 'number' ? todo.order : Date.now(),

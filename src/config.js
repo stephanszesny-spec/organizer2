@@ -56,6 +56,9 @@ export const DEFAULT_REMINDER_INTERVAL_DAYS = 7;
 // Konfigurierbare Felder pro Lane: 'off' | 'optional' | 'required'
 export const LANE_FIELDS = ['dueDate', 'customer', 'reminder'];
 
+// Standard-Technologieliste (im Einstellungsmenü pflegbar)
+export const DEFAULT_TECHNOLOGIES = [];
+
 // Standard-Lanes (Erstinitialisierung). Danach frei bearbeit-/erweiterbar.
 export const DEFAULT_LANES = [
   { id: 'strategic', label: 'Strategische Todos', order: 0, fields: { dueDate: 'optional', customer: 'optional', reminder: 'optional' } },

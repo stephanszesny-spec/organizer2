@@ -11,6 +11,7 @@ const PRIO_WEIGHT = { high: 0, medium: 1, low: 2 };
 
 let lanes = [];
 let todos = [];
+let technologies = [];
 let editingId = null;
 let editChecklist = []; // Arbeitskopie der Checkliste im offenen Dialog
 let editingLaneId = null;
@@ -132,6 +133,7 @@ function cardHtml(todo) {
     tags.push(`<span class="tag">☑ ${done}/${todo.checklist.length}</span>`);
   }
   if (todo.dependsOn?.length) tags.push(`<span class="tag">⛓ ${todo.dependsOn.length}</span>`);
+  (todo.technologies || []).forEach((t) => tags.push(`<span class="tag tech">🔧 ${escapeHtml(t)}</span>`));
   if (todo.reminder) {
     tags.push(todo.reminder.due ? `<span class="tag reminder">🔔 fällig</span>` : `<span class="tag reminder">🔔 in ${todo.reminder.daysUntil} T</span>`);
   }
@@ -269,6 +271,7 @@ function openCreate(presetCategory) {
   applyLaneFields();
   renderChecklist();
   renderDeps(null);
+  renderTechPicker([]);
   showModal('#modal');
   $('#f-title').focus();
 }
@@ -299,6 +302,7 @@ function openEdit(id) {
   renderSummary(t);
   renderChecklist();
   renderDeps(t);
+  renderTechPicker(t.technologies || []);
   renderLinks(t);
   showModal('#modal');
 }
@@ -391,6 +395,53 @@ function renderDeps(t) {
   box.querySelectorAll('[data-dep]').forEach((a) => a.addEventListener('click', () => openEdit(a.dataset.dep)));
 }
 
+// ---- Technologien ----
+function renderTechPicker(selected) {
+  const sel = selected || [];
+  const all = [...new Set([...technologies, ...sel])].sort((a, b) => a.localeCompare(b, 'de'));
+  const box = $('#techPicker');
+  if (!all.length) {
+    box.innerHTML = '<span class="deps-hint">Noch keine Technologien gepflegt – im ⚙-Menü hinzufügen.</span>';
+    return;
+  }
+  box.innerHTML = all
+    .map((t) => `<label class="tech-chip ${sel.includes(t) ? 'on' : ''}"><input type="checkbox" value="${escapeHtml(t)}" ${sel.includes(t) ? 'checked' : ''} /> ${escapeHtml(t)}</label>`)
+    .join('');
+  box.querySelectorAll('input').forEach((cb) =>
+    cb.addEventListener('change', () => cb.closest('.tech-chip').classList.toggle('on', cb.checked)),
+  );
+}
+function selectedTechnologies() {
+  return Array.from($('#techPicker').querySelectorAll('input:checked')).map((c) => c.value);
+}
+
+function renderTechManager() {
+  const list = $('#techList');
+  list.innerHTML = technologies.length
+    ? technologies.map((t) => `<li class="tech-row"><span>${escapeHtml(t)}</span><button class="icon-btn" data-techdel="${escapeHtml(t)}" title="Entfernen" type="button">✕</button></li>`).join('')
+    : '<li class="comments-empty">Noch keine Technologien.</li>';
+  list.querySelectorAll('[data-techdel]').forEach((b) => b.addEventListener('click', () => removeTechnology(b.dataset.techdel)));
+}
+async function addTechnology() {
+  const inp = $('#techInput');
+  const name = inp.value.trim();
+  if (!name) return;
+  try {
+    technologies = await api('/api/technologies', { method: 'POST', body: { name } });
+    inp.value = '';
+    renderTechManager();
+    toast('Technologie hinzugefügt', 'ok');
+  } catch (e) { toast('Fehler: ' + e.message, 'err'); }
+}
+async function removeTechnology(name) {
+  try {
+    technologies = await api(`/api/technologies/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    renderTechManager();
+    await reload(); // aus Todos entfernt -> Karten aktualisieren
+    toast('Technologie entfernt', 'ok');
+  } catch (e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
 function fillCustomerList() {
   $('#customerList').innerHTML = [...new Set(todos.map((t) => t.customer).filter(Boolean))].sort()
     .map((n) => `<option value="${escapeHtml(n)}"></option>`).join('');
@@ -444,6 +495,7 @@ async function saveTodo() {
     dueDate: f.dueDate === 'off' ? null : $('#f-dueDate').value || null,
     checklist: editChecklist,
     dependsOn: Array.from($('#f-dependsOn').selectedOptions).map((o) => o.value).filter(Boolean),
+    technologies: selectedTechnologies(),
   };
   if (f.reminder === 'off') body.reminderIntervalDays = null;
   else { const v = Number($('#f-interval').value); body.reminderIntervalDays = v > 0 ? v : null; }
@@ -622,7 +674,11 @@ async function doSync() {
   } catch (e) { toast('Sync fehlgeschlagen: ' + e.message, 'err'); }
   finally { btn.classList.remove('syncing'); btn.disabled = false; }
 }
-function openTest() { $('#testList').innerHTML = '<li class="test-empty">Noch nicht getestet – auf „Alle testen" klicken.</li>'; showModal('#testModal'); }
+function openTest() {
+  renderTechManager();
+  $('#testList').innerHTML = '<li class="test-empty">Noch nicht getestet – auf „Alle testen" klicken.</li>';
+  showModal('#testModal');
+}
 function testRowHtml(x) {
   const state = !x.configured ? 'na' : x.ok ? 'ok' : 'err';
   const icon = state === 'ok' ? '✓' : state === 'err' ? '✗' : '–';
@@ -657,9 +713,10 @@ function showModal(sel) { $(sel).classList.remove('hidden'); }
 function closeModal(sel) { $(sel).classList.add('hidden'); }
 
 async function reload() {
-  const [laneData, todoData] = await Promise.all([api('/api/lanes'), api('/api/todos')]);
+  const [laneData, todoData, techData] = await Promise.all([api('/api/lanes'), api('/api/todos'), api('/api/technologies')]);
   lanes = laneData;
   todos = todoData;
+  technologies = techData;
   buildBoard();
   render();
   loadStatus();
@@ -688,6 +745,8 @@ function init() {
   $('#sendBtn').addEventListener('click', sendMessage);
   $('#menuBtn').addEventListener('click', openTest);
   $('#runTestBtn').addEventListener('click', runTests);
+  $('#addTechBtn').addEventListener('click', addTechnology);
+  $('#techInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addTechnology(); } });
   $('#laneSaveBtn').addEventListener('click', saveLane);
   $('#laneDeleteBtn').addEventListener('click', deleteLane);
   $('#f-category').addEventListener('change', applyLaneFields);

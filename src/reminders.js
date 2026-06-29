@@ -7,7 +7,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * "due" = es ist Zeit, erneut einen Reminder zu versenden.
  */
 export function reminderStatus(todo, ref = new Date()) {
-  if (todo.category !== 'reminder') return null;
+  // Reminder ist in jeder Lane möglich: aktiv, sobald ein Intervall gesetzt ist.
+  if (!todo.reminderIntervalDays) return null;
 
   const intervalDays = Number(todo.reminderIntervalDays) || DEFAULT_REMINDER_INTERVAL_DAYS;
   // Basis: letzter gesendeter Reminder, sonst Erstellzeit.
@@ -26,7 +27,7 @@ export function reminderStatus(todo, ref = new Date()) {
 
 export function dueReminders(todos, ref = new Date()) {
   return todos
-    .filter((t) => t.category === 'reminder' && !t.done)
+    .filter((t) => t.reminderIntervalDays && !t.done)
     .map((t) => ({ todo: t, status: reminderStatus(t, ref) }))
     .filter((x) => x.status?.due);
 }

@@ -141,6 +141,41 @@ Berücksichtige Bedeutung, Synonyme, verwandte Begriffe und Kontext – nicht nu
 Gib nur wirklich passende Todos zurück. Antworte AUSSCHLIESSLICH mit JSON: { "ids": ["..."] }.`;
 
 /**
+ * Erstellt eine kurze Zusammenfassung des aktuellen Stands eines Todos auf Basis
+ * der verknüpften Vorgänge (Mails/Tickets/Nachrichten), Notizen und Kommentare.
+ * Ohne API-Key: einfache Heuristik (letzter verknüpfter Vorgang + Notiz-Anfang).
+ */
+export async function summarizeTodo({ todo, links }) {
+  const linkList = links || todo.links || [];
+  const c = getClient();
+  if (!c) {
+    const last = linkList[0];
+    const parts = [];
+    if (last) parts.push(`Letzter Vorgang: ${last.subject || ''}${last.from ? ` (${last.from})` : ''}.`);
+    if (last?.snippet) parts.push(last.snippet);
+    if (todo.notes) parts.push(`Notiz: ${todo.notes.slice(0, 200)}`);
+    return { text: parts.join(' ').slice(0, 600) || 'Keine Daten für eine Zusammenfassung vorhanden.', generatedBy: 'fallback' };
+  }
+
+  const system = `Du fasst den aktuellen Stand einer Aufgabe in 2-4 prägnanten Sätzen auf Deutsch zusammen.
+Stütze dich auf die verknüpften Vorgänge, Notizen und Kommentare. Nenne offene Punkte und den nächsten sinnvollen Schritt. Keine Floskeln, kein Markdown.`;
+  const content = `Aufgabe: ${todo.title}
+Notizen: ${todo.notes || '-'}
+Kommentare: ${(todo.comments || []).map((k) => k.text).join(' | ') || '-'}
+Verknüpfte Vorgänge:
+${JSON.stringify(linkList.map((l) => ({ quelle: l.source, betreff: l.subject, von: l.from, auszug: l.snippet })), null, 2)}`;
+
+  const msg = await c.messages.create({
+    model: config.llm.draftModel,
+    max_tokens: 400,
+    system,
+    messages: [{ role: 'user', content }],
+  });
+  const text = msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('').trim();
+  return { text, generatedBy: config.llm.draftModel };
+}
+
+/**
  * Entscheidet, ob eine erkannte Änderung am Quell-Vorgang eine klare Auswirkung
  * auf den Nutzer hat (= erledigtes Todo soll wieder auftauchen).
  * Ohne API-Key: true – dann zählt bereits die Heuristik (Änderung der

@@ -66,7 +66,15 @@ html, body {
 .btn.syncing .sync-icon { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.bell { position: relative; background: none; border: none; font-size: 22px; cursor: pointer; }
+.bell {
+  position: relative; cursor: pointer; font-size: 18px; line-height: 1;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.bell:hover { filter: brightness(1.15); border-color: var(--primary); }
 .badge {
   position: absolute; top: -6px; right: -8px;
   background: var(--danger); color: #fff;
@@ -123,10 +131,11 @@ html, body {
 /* ---- Board ---- */
 .board {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(var(--cols, 4), minmax(240px, 1fr));
   gap: 14px;
   padding: 16px;
   align-items: start;
+  overflow-x: auto;
 }
 .column {
   background: var(--surface);
@@ -301,3 +310,37 @@ html, body {
   .column { min-height: auto; }
   .cards { min-height: 30px; }
 }
+
+/* ---- Lanes: Kopf-Buttons, Sortierzeile, Add-Lane ---- */
+.column-head .head-right { display: flex; align-items: center; gap: 6px; }
+.column-head .icon-btn { color: var(--text); font-size: 16px; padding: 2px 6px; border-radius: 6px; }
+.column-head .icon-btn:hover { background: var(--surface-2); color: var(--primary); }
+.column-sub { padding: 6px 10px 0; }
+.column-sub .col-sort { width: 100%; max-width: none; }
+.column-addlane { background: transparent; border: 1px dashed var(--border); display: flex; align-items: flex-start; justify-content: center; }
+.addlane-btn { margin: 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer; font-weight: 600; white-space: nowrap; }
+.addlane-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+/* ---- Pflichtfeld-Marker ---- */
+.req { color: var(--danger); font-weight: 700; }
+.btn-sm { padding: 4px 8px; font-size: 12px; margin-left: 8px; }
+
+/* ---- Zusammenfassung ---- */
+.summary-section h3, .checklist-section h3, .deps-section h3 { font-size: 13px; color: var(--text-dim); margin: 0 0 8px; display: flex; align-items: center; }
+.summary-text { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+.summary-text.empty { color: var(--text-dim); font-style: italic; }
+
+/* ---- Checkliste ---- */
+.checklist-items { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.checklist-item { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.checklist-item span { flex: 1; font-size: 14px; word-break: break-word; }
+.checklist-item .cl-done { text-decoration: line-through; color: var(--text-dim); }
+.checklist-item input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--low); flex: 0 0 auto; }
+.cl-del { color: var(--text-dim); }
+
+/* ---- Abhängigkeiten ---- */
+.deps-section select[multiple] { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 6px; font-family: inherit; font-size: 13px; }
+.deps-dependents { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.deps-hint { font-size: 12px; color: var(--text-dim); width: 100%; }
+.dep-chip { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+.dep-chip:hover { border-color: var(--primary); color: var(--primary); }

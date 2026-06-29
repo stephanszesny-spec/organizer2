@@ -49,19 +49,14 @@
           <input type="text" id="f-title" maxlength="200" placeholder="Was ist zu tun?" />
         </label>
 
-        <label>Kunde
-          <input type="text" id="f-customer" maxlength="120" placeholder="Kunde / Firma (optional)" list="customerList" />
+        <label id="f-customer-wrap">Kunde <span class="req hidden">*</span>
+          <input type="text" id="f-customer" maxlength="120" placeholder="Kunde / Firma" list="customerList" />
           <datalist id="customerList"></datalist>
         </label>
 
         <div class="row">
-          <label>Bereich
-            <select id="f-category">
-              <option value="strategic">Strategisch</option>
-              <option value="operative">Operativ</option>
-              <option value="sales">Salesprozesse</option>
-              <option value="reminder">Reminder</option>
-            </select>
+          <label>Bereich (Lane)
+            <select id="f-category"></select>
           </label>
           <label>Priorität
             <select id="f-priority">
@@ -73,10 +68,10 @@
         </div>
 
         <div class="row">
-          <label>Ziel-Datum
+          <label id="f-dueDate-wrap">Ziel-Datum <span class="req hidden">*</span>
             <input type="date" id="f-dueDate" />
           </label>
-          <label id="f-interval-wrap" class="hidden">Reminder-Intervall (Tage)
+          <label id="f-interval-wrap" class="hidden">Reminder-Intervall (Tage) <span class="req hidden">*</span>
             <input type="number" id="f-interval" min="1" value="7" />
           </label>
         </div>
@@ -84,6 +79,33 @@
         <label>Notizen
           <textarea id="f-notes" rows="4" placeholder="Kontext, Details, nächste Schritte…"></textarea>
         </label>
+
+        <!-- LLM-Zusammenfassung des aktuellen Stands -->
+        <div id="summarySection" class="summary-section hidden">
+          <h3>Aktueller Stand (Zusammenfassung)
+            <button id="genSummaryBtn" class="btn btn-ghost btn-sm" type="button">✨ Aktualisieren</button>
+          </h3>
+          <div id="summaryText" class="summary-text"></div>
+        </div>
+
+        <!-- Checkliste -->
+        <div id="checklistSection" class="checklist-section">
+          <h3>Checkliste</h3>
+          <ul id="checklistItems" class="checklist-items"></ul>
+          <div class="comment-add">
+            <input type="text" id="checklistInput" maxlength="200" placeholder="Punkt hinzufügen…" />
+            <button id="addChecklistBtn" class="btn btn-ghost" type="button">+ Punkt</button>
+          </div>
+        </div>
+
+        <!-- Abhängigkeiten zu anderen Todos -->
+        <div id="depsSection" class="deps-section">
+          <h3>Abhängigkeiten</h3>
+          <label>Hängt ab von (Voraussetzungen) – Mehrfachauswahl mit Strg/⌘:
+            <select id="f-dependsOn" multiple size="4"></select>
+          </label>
+          <div id="dependentsBox" class="deps-dependents"></div>
+        </div>
 
         <!-- Kommentare (zeitgestempelt, nach Erstellung hinzufügbar) -->
         <div id="commentsSection" class="comments-section hidden">
@@ -148,6 +170,38 @@
       <div class="modal-foot">
         <div class="spacer"></div>
         <button id="sendBtn" class="btn btn-primary">Senden</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lane erstellen/bearbeiten -->
+  <div id="laneModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2 id="laneModalTitle">Lane</h2>
+        <button class="icon-btn" data-close-lane>✕</button>
+      </div>
+      <div class="modal-body">
+        <label>Bezeichnung
+          <input type="text" id="lane-label" maxlength="60" placeholder="z.B. Projekte" />
+        </label>
+        <p class="meta-line">Felder je Lane – verpflichtend, optional oder ausgeblendet:</p>
+        <div class="row">
+          <label>Ziel-Datum
+            <select id="lane-dueDate"><option value="optional">optional</option><option value="required">verpflichtend</option><option value="off">aus</option></select>
+          </label>
+          <label>Kunde
+            <select id="lane-customer"><option value="optional">optional</option><option value="required">verpflichtend</option><option value="off">aus</option></select>
+          </label>
+          <label>Reminder
+            <select id="lane-reminder"><option value="optional">optional</option><option value="required">verpflichtend</option><option value="off">aus</option></select>
+          </label>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button id="laneDeleteBtn" class="btn btn-danger hidden">Löschen</button>
+        <div class="spacer"></div>
+        <button id="laneSaveBtn" class="btn btn-primary">Speichern</button>
       </div>
     </div>
   </div>

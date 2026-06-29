@@ -2,16 +2,15 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { config, CATEGORIES, DEFAULT_REMINDER_INTERVAL_DAYS } from './config.js';
+import { config, DEFAULT_LANES, LANE_FIELDS, DEFAULT_REMINDER_INTERVAL_DAYS } from './config.js';
 
 /**
  * Persistenz: eine einzelne JSON-Datei (z.B. im OneDrive-Ordner).
- * - In-Memory-State + atomares Schreiben (Temp-Datei -> rename), damit ein
- *   parallel laufender OneDrive-Sync nie eine halb geschriebene Datei sieht.
- * - Schreibvorgänge werden serialisiert, damit sie sich nicht überholen.
+ * - In-Memory-State + atomares Schreiben (Temp-Datei -> rename).
+ * - Schreibvorgänge werden serialisiert.
  */
 
-const EMPTY = { version: 1, todos: [], meta: { lastSync: null } };
+const EMPTY = { version: 2, lanes: [], todos: [], meta: { lastSync: null } };
 
 let state = structuredClone(EMPTY);
 let writeChain = Promise.resolve();
@@ -29,17 +28,27 @@ export async function load() {
     state = { ...structuredClone(EMPTY), ...parsed };
     if (!Array.isArray(state.todos)) state.todos = [];
   } catch (err) {
-    if (err.code === 'ENOENT') {
-      await persist(); // erste Initialisierung
-    } else {
+    if (err.code !== 'ENOENT') {
       throw new Error(`Datenbank-Datei konnte nicht gelesen werden (${config.dataFile}): ${err.message}`);
     }
   }
+  // Lanes sicherstellen (Migration bestehender Daten ohne Lanes)
+  if (!Array.isArray(state.lanes) || state.lanes.length === 0) {
+    state.lanes = DEFAULT_LANES.map((l, i) => normalizeLane(l, i));
+  } else {
+    state.lanes = state.lanes.map((l, i) => normalizeLane(l, i));
+  }
+  // Verwaiste Todos (Lane gelöscht) auf erste Lane umhängen
+  const laneIds = new Set(state.lanes.map((l) => l.id));
+  const fallback = getLanes()[0]?.id;
+  for (const t of state.todos) {
+    if (!laneIds.has(t.category)) t.category = fallback;
+  }
+  await persist();
   return state;
 }
 
 function persist() {
-  // Schreibvorgänge serialisieren.
   writeChain = writeChain.then(async () => {
     ensureDir();
     const tmp = `${config.dataFile}.${process.pid}.tmp`;
@@ -50,70 +59,150 @@ function persist() {
 }
 
 const now = () => new Date().toISOString();
+const slug = (s) =>
+  String(s || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
 
-function normalizeComment(c) {
+// ---------------- Lanes ----------------
+function normalizeLane(l, index) {
+  const f = l.fields || {};
+  const fieldVal = (v) => (['off', 'optional', 'required'].includes(v) ? v : 'optional');
+  const fields = {};
+  for (const key of LANE_FIELDS) fields[key] = fieldVal(f[key]);
   return {
-    id: c.id || crypto.randomUUID(),
-    text: (c.text || '').trim(),
-    createdAt: c.createdAt || now(),
+    id: l.id || slug(l.label) || crypto.randomUUID().slice(0, 8),
+    label: (l.label || '').trim() || 'Neue Lane',
+    order: typeof l.order === 'number' ? l.order : index,
+    fields,
   };
 }
 
+export function getLanes() {
+  return [...state.lanes].sort((a, b) => a.order - b.order);
+}
+export function getLane(id) {
+  return state.lanes.find((l) => l.id === id) || null;
+}
+export async function createLane(data) {
+  const base = slug(data.label) || 'lane';
+  const ids = new Set(state.lanes.map((l) => l.id));
+  let id = base;
+  let n = 1;
+  while (ids.has(id)) id = `${base}-${++n}`;
+  const order = state.lanes.reduce((m, l) => Math.max(m, l.order), -1) + 1;
+  const lane = normalizeLane({ ...data, id, order }, order);
+  state.lanes.push(lane);
+  await persist();
+  return lane;
+}
+export async function updateLane(id, patch) {
+  const lane = getLane(id);
+  if (!lane) return null;
+  const merged = normalizeLane({ ...lane, ...patch, id: lane.id, order: lane.order }, lane.order);
+  Object.assign(lane, merged);
+  await persist();
+  return lane;
+}
+export async function deleteLane(id) {
+  if (state.lanes.length <= 1) return { error: 'Mindestens eine Lane muss bestehen bleiben.' };
+  const idx = state.lanes.findIndex((l) => l.id === id);
+  if (idx === -1) return { error: 'Lane nicht gefunden.' };
+  const fallback = getLanes().filter((l) => l.id !== id)[0].id;
+  let movedCount = 0;
+  for (const t of state.todos) {
+    if (t.category === id) {
+      t.category = fallback;
+      t.updatedAt = now();
+      movedCount++;
+    }
+  }
+  state.lanes.splice(idx, 1);
+  await persist();
+  return { movedCount, fallbackLaneId: fallback };
+}
+export async function reorderLanes(orderedIds) {
+  orderedIds.forEach((id, index) => {
+    const lane = getLane(id);
+    if (lane) lane.order = index;
+  });
+  await persist();
+  return getLanes();
+}
+
+// ---------------- Todos ----------------
+function normalizeComment(c) {
+  return { id: c.id || crypto.randomUUID(), text: (c.text || '').trim(), createdAt: c.createdAt || now() };
+}
+function normalizeChecklistItem(c) {
+  return { id: c.id || crypto.randomUUID(), text: (c.text || '').trim(), checked: Boolean(c.checked) };
+}
+function normalizeSummary(s) {
+  if (s && typeof s === 'object') {
+    return { text: s.text || '', generatedAt: s.generatedAt || null, generatedBy: s.generatedBy || null };
+  }
+  return { text: '', generatedAt: null, generatedBy: null };
+}
+
 function normalize(todo) {
-  const t = {
-    id: todo.id || crypto.randomUUID(),
-    category: CATEGORIES.includes(todo.category) ? todo.category : 'operative',
+  const id = todo.id || crypto.randomUUID();
+  const laneIds = state.lanes.map((l) => l.id);
+  const category = laneIds.includes(todo.category) ? todo.category : laneIds[0] || 'operative';
+  const interval =
+    todo.reminderIntervalDays !== null && todo.reminderIntervalDays !== undefined && todo.reminderIntervalDays !== ''
+      ? Number(todo.reminderIntervalDays) || null
+      : null;
+  return {
+    id,
+    category,
     title: (todo.title || '').trim(),
     priority: ['high', 'medium', 'low'].includes(todo.priority) ? todo.priority : 'medium',
     dueDate: todo.dueDate || null,
     notes: todo.notes || '',
     customer: (todo.customer || '').trim(),
+    summary: normalizeSummary(todo.summary),
+    checklist: Array.isArray(todo.checklist) ? todo.checklist.map(normalizeChecklistItem) : [],
+    dependsOn: Array.isArray(todo.dependsOn)
+      ? [...new Set(todo.dependsOn.filter((x) => typeof x === 'string' && x !== id))]
+      : [],
     comments: Array.isArray(todo.comments) ? todo.comments.map(normalizeComment) : [],
     order: typeof todo.order === 'number' ? todo.order : Date.now(),
     createdAt: todo.createdAt || now(),
     updatedAt: todo.updatedAt || now(),
-    // Herkunft / Verknüpfungen
-    source: todo.source || 'manual', // manual | m365mail | teams | jira | freshdesk
+    source: todo.source || 'manual',
     links: Array.isArray(todo.links) ? todo.links : [],
     dedupeKey: todo.dedupeKey || null,
-    // Reminder-spezifisch
-    reminderIntervalDays:
-      todo.category === 'reminder'
-        ? Number(todo.reminderIntervalDays) || DEFAULT_REMINDER_INTERVAL_DAYS
-        : (todo.reminderIntervalDays ?? null),
+    // Reminder ist in jeder Lane möglich: aktiv, wenn ein Intervall gesetzt ist.
+    reminderIntervalDays: interval,
     lastReminderSentAt: todo.lastReminderSentAt || null,
-    // Erledigt-Status
     done: Boolean(todo.done),
     doneAt: todo.doneAt || null,
-    // Letzter bekannter "Stand" des Quell-Items (z.B. JIRA updated) – nur zur Info.
     sourceUpdatedAt: todo.sourceUpdatedAt || null,
-    // Signatur der für den Nutzer RELEVANTEN Felder (z.B. Status). Ändert sich
-    // diese, taucht ein erledigtes Todo wieder auf. Reine Zeitstempel-/Fremd-
-    // änderungen ändern den Key NICHT.
     relevanceKey: todo.relevanceKey || null,
   };
-  return t;
 }
 
 export function getAll() {
   return state.todos;
 }
-
 export function getById(id) {
   return state.todos.find((t) => t.id === id) || null;
 }
-
 export function findByDedupeKey(key) {
   if (!key) return null;
   return state.todos.find((t) => t.dedupeKey === key) || null;
 }
+/** Todos, die vom angegebenen Todo abhängen (Reverse-Dependency). */
+export function getDependents(id) {
+  return state.todos.filter((t) => (t.dependsOn || []).includes(id));
+}
 
 export async function create(data) {
   const todo = normalize(data);
-  // Am Ende der Zielspalte einsortieren.
-  const maxOrder = state.todos
-    .filter((t) => t.category === todo.category)
-    .reduce((m, t) => Math.max(m, t.order), 0);
+  const maxOrder = state.todos.filter((t) => t.category === todo.category).reduce((m, t) => Math.max(m, t.order), 0);
   todo.order = maxOrder + 1;
   state.todos.push(todo);
   await persist();
@@ -134,8 +223,16 @@ export async function addComment(id, text) {
   const todo = getById(id);
   if (!todo) return null;
   if (!text || !text.trim()) return todo;
-  const comment = normalizeComment({ text });
-  todo.comments.push(comment);
+  todo.comments.push(normalizeComment({ text }));
+  todo.updatedAt = now();
+  await persist();
+  return todo;
+}
+
+export async function setSummary(id, text, generatedBy) {
+  const todo = getById(id);
+  if (!todo) return null;
+  todo.summary = { text: text || '', generatedAt: now(), generatedBy: generatedBy || null };
   todo.updatedAt = now();
   await persist();
   return todo;
@@ -151,12 +248,6 @@ export async function setDone(id, done) {
   return todo;
 }
 
-/**
- * Wendet beim Sync den neuen Stand eines Quell-Items an.
- * - sourceUpdatedAt: merkt sich den letzten bekannten "Stand" (z.B. JIRA updated)
- * - resurface: holt ein erledigtes Todo zurück in die Hauptübersicht (done=false)
- * - link: aktualisiert den verknüpften Vorgang
- */
 export async function applySourceState(id, { sourceUpdatedAt, relevanceKey, link, resurface } = {}) {
   const todo = getById(id);
   if (!todo) return null;
@@ -176,25 +267,20 @@ export async function remove(id) {
   const idx = state.todos.findIndex((t) => t.id === id);
   if (idx === -1) return false;
   state.todos.splice(idx, 1);
+  // Abhängigkeiten auf das gelöschte Todo entfernen
+  for (const t of state.todos) {
+    if (t.dependsOn?.includes(id)) t.dependsOn = t.dependsOn.filter((d) => d !== id);
+  }
   await persist();
   return true;
 }
 
-/**
- * Reihenfolge & Kategorie nach Drag&Drop neu setzen.
- * orderedIds = Reihenfolge der Karten in der Zielspalte (category).
- */
+/** Reihenfolge & Lane nach Drag&Drop neu setzen. */
 export async function reorder(category, orderedIds) {
   orderedIds.forEach((id, index) => {
     const todo = getById(id);
     if (todo) {
-      if (todo.category !== category) {
-        todo.category = category;
-        // Reminder-Defaults setzen, wenn in/aus Reminder-Spalte verschoben
-        if (category === 'reminder' && !todo.reminderIntervalDays) {
-          todo.reminderIntervalDays = DEFAULT_REMINDER_INTERVAL_DAYS;
-        }
-      }
+      todo.category = category;
       todo.order = index;
       todo.updatedAt = now();
     }
@@ -207,7 +293,8 @@ export function setMeta(patch) {
   state.meta = { ...state.meta, ...patch };
   return persist();
 }
-
 export function getMeta() {
   return state.meta;
 }
+
+export { DEFAULT_REMINDER_INTERVAL_DAYS };

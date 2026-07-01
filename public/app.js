@@ -396,20 +396,39 @@ function renderDeps(t) {
 }
 
 // ---- Technologien ----
+// Anzeige: standardmäßig nur die ausgewählten als Liste; „Bearbeiten" klappt die
+// vollständige Auswahl (Checkbox-Chips) auf.
 function renderTechPicker(selected) {
   const sel = selected || [];
   const all = [...new Set([...technologies, ...sel])].sort((a, b) => a.localeCompare(b, 'de'));
   const box = $('#techPicker');
+  box.classList.add('hidden');
+  $('#techEditBtn').textContent = 'Bearbeiten';
   if (!all.length) {
     box.innerHTML = '<span class="deps-hint">Noch keine Technologien gepflegt – im ⚙-Menü hinzufügen.</span>';
-    return;
+  } else {
+    box.innerHTML = all
+      .map((t) => `<label class="tech-chip ${sel.includes(t) ? 'on' : ''}"><input type="checkbox" value="${escapeHtml(t)}" ${sel.includes(t) ? 'checked' : ''} /> ${escapeHtml(t)}</label>`)
+      .join('');
+    box.querySelectorAll('input').forEach((cb) =>
+      cb.addEventListener('change', () => {
+        cb.closest('.tech-chip').classList.toggle('on', cb.checked);
+        renderTechDisplay(selectedTechnologies());
+      }),
+    );
   }
-  box.innerHTML = all
-    .map((t) => `<label class="tech-chip ${sel.includes(t) ? 'on' : ''}"><input type="checkbox" value="${escapeHtml(t)}" ${sel.includes(t) ? 'checked' : ''} /> ${escapeHtml(t)}</label>`)
-    .join('');
-  box.querySelectorAll('input').forEach((cb) =>
-    cb.addEventListener('change', () => cb.closest('.tech-chip').classList.toggle('on', cb.checked)),
-  );
+  renderTechDisplay(sel);
+}
+function renderTechDisplay(sel) {
+  const box = $('#techDisplay');
+  box.innerHTML = sel.length
+    ? sel.map((t) => `<span class="tag tech">🔧 ${escapeHtml(t)}</span>`).join('')
+    : '<span class="deps-hint">Keine ausgewählt.</span>';
+}
+function toggleTechEdit() {
+  const box = $('#techPicker');
+  const hidden = box.classList.toggle('hidden');
+  $('#techEditBtn').textContent = hidden ? 'Bearbeiten' : 'Fertig';
 }
 function selectedTechnologies() {
   return Array.from($('#techPicker').querySelectorAll('input:checked')).map((c) => c.value);
@@ -737,6 +756,7 @@ function init() {
   $('#toggleDone').classList.toggle('active', showDone);
   $('#draftBtn').addEventListener('click', openDraft);
   $('#genSummaryBtn').addEventListener('click', generateSummary);
+  $('#techEditBtn').addEventListener('click', toggleTechEdit);
   $('#addChecklistBtn').addEventListener('click', addChecklistItem);
   $('#checklistInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addChecklistItem(); } });
   $('#addCommentBtn').addEventListener('click', addComment);

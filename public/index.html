@@ -39,81 +39,105 @@
 
   <!-- Edit/Create Modal -->
   <div id="modal" class="modal hidden">
-    <div class="modal-card">
+    <div class="modal-card wide">
       <div class="modal-head">
         <h2 id="modalTitle">Todo</h2>
         <button class="icon-btn" data-close>✕</button>
       </div>
       <div class="modal-body">
-        <label>Kurze Beschreibung
-          <input type="text" id="f-title" maxlength="200" placeholder="Was ist zu tun?" />
-        </label>
+        <div class="modal-grid">
+          <!-- Linke Spalte: Hauptinformationen -->
+          <div class="modal-col">
+            <h3 class="col-title">Hauptinformationen</h3>
+            <label>Kurze Beschreibung
+              <input type="text" id="f-title" maxlength="200" placeholder="Was ist zu tun?" />
+            </label>
 
-        <label id="f-customer-wrap">Kunde <span class="req hidden">*</span>
-          <input type="text" id="f-customer" maxlength="120" placeholder="Kunde / Firma" list="customerList" />
-          <datalist id="customerList"></datalist>
-        </label>
+            <label id="f-customer-wrap">Kunde <span class="req hidden">*</span>
+              <input type="text" id="f-customer" maxlength="120" placeholder="Kunde / Firma" list="customerList" />
+              <datalist id="customerList"></datalist>
+            </label>
 
-        <div class="row">
-          <label>Bereich (Lane)
-            <select id="f-category"></select>
-          </label>
-          <label>Priorität
-            <select id="f-priority">
-              <option value="high">Hoch</option>
-              <option value="medium">Mittel</option>
-              <option value="low">Niedrig</option>
-            </select>
-          </label>
-        </div>
+            <div class="row">
+              <label>Bereich (Lane)
+                <select id="f-category"></select>
+              </label>
+              <label>Priorität
+                <select id="f-priority">
+                  <option value="high">Hoch</option>
+                  <option value="medium">Mittel</option>
+                  <option value="low">Niedrig</option>
+                </select>
+              </label>
+            </div>
 
-        <div class="row">
-          <label id="f-dueDate-wrap">Ziel-Datum <span class="req hidden">*</span>
-            <input type="date" id="f-dueDate" />
-          </label>
-          <label id="f-interval-wrap" class="hidden">Reminder-Intervall (Tage) <span class="req hidden">*</span>
-            <input type="number" id="f-interval" min="1" value="7" />
-          </label>
-        </div>
+            <div class="row">
+              <label id="f-dueDate-wrap">Ziel-Datum <span class="req hidden">*</span>
+                <input type="date" id="f-dueDate" />
+              </label>
+              <label id="f-interval-wrap" class="hidden">Reminder-Intervall (Tage) <span class="req hidden">*</span>
+                <input type="number" id="f-interval" min="1" value="7" />
+              </label>
+            </div>
 
-        <label>Notizen
-          <textarea id="f-notes" rows="4" placeholder="Kontext, Details, nächste Schritte…"></textarea>
-        </label>
+            <label>Notizen
+              <textarea id="f-notes" rows="5" placeholder="Kontext, Details, nächste Schritte…"></textarea>
+            </label>
 
-        <!-- LLM-Zusammenfassung des aktuellen Stands -->
-        <div id="summarySection" class="summary-section hidden">
-          <h3>Aktueller Stand (Zusammenfassung)
-            <button id="genSummaryBtn" class="btn btn-ghost btn-sm" type="button">✨ Aktualisieren</button>
-          </h3>
-          <div id="summaryText" class="summary-text"></div>
-        </div>
+            <!-- Checkliste -->
+            <div id="checklistSection" class="checklist-section">
+              <h3>Checkliste</h3>
+              <ul id="checklistItems" class="checklist-items"></ul>
+              <div class="comment-add">
+                <input type="text" id="checklistInput" maxlength="200" placeholder="Punkt hinzufügen…" />
+                <button id="addChecklistBtn" class="btn btn-ghost" type="button">+ Punkt</button>
+              </div>
+            </div>
+          </div>
 
-        <!-- Checkliste -->
-        <div id="checklistSection" class="checklist-section">
-          <h3>Checkliste</h3>
-          <ul id="checklistItems" class="checklist-items"></ul>
-          <div class="comment-add">
-            <input type="text" id="checklistInput" maxlength="200" placeholder="Punkt hinzufügen…" />
-            <button id="addChecklistBtn" class="btn btn-ghost" type="button">+ Punkt</button>
+          <!-- Rechte Spalte: Zusatzinformationen -->
+          <div class="modal-col">
+            <h3 class="col-title">Zusatzinformationen</h3>
+
+            <!-- LLM-Zusammenfassung des aktuellen Stands -->
+            <div id="summarySection" class="summary-section hidden">
+              <h3>Aktueller Stand (Zusammenfassung)
+                <button id="genSummaryBtn" class="btn btn-ghost btn-sm" type="button">✨ Aktualisieren</button>
+              </h3>
+              <div id="summaryText" class="summary-text"></div>
+            </div>
+
+            <!-- Technologien -->
+            <div id="techSection" class="tech-section">
+              <h3>Technologien
+                <button id="techEditBtn" class="btn btn-ghost btn-sm" type="button">Bearbeiten</button>
+              </h3>
+              <div id="techDisplay" class="tech-display"></div>
+              <div id="techPicker" class="tech-picker hidden"></div>
+            </div>
+
+            <!-- Abhängigkeiten zu anderen Todos -->
+            <div id="depsSection" class="deps-section">
+              <h3>Abhängigkeiten</h3>
+              <label>Hängt ab von (Voraussetzungen) – Mehrfachauswahl mit Strg/⌘:
+                <select id="f-dependsOn" multiple size="4"></select>
+              </label>
+              <div id="dependentsBox" class="deps-dependents"></div>
+            </div>
+
+            <div id="reminderInfo" class="reminder-info hidden"></div>
+
+            <!-- Verknüpfte Quellen (E-Mails/Nachrichten/Tickets) -->
+            <div id="linksSection" class="links-section hidden">
+              <h3>Verknüpfte Vorgänge</h3>
+              <ul id="linksList" class="links-list"></ul>
+            </div>
+
+            <p class="meta-line">Letzte Aktualisierung: <span id="f-updatedAt">–</span></p>
           </div>
         </div>
 
-        <!-- Technologien (optional, im ⚙-Menü pflegbar) -->
-        <div id="techSection" class="tech-section">
-          <h3>Technologien</h3>
-          <div id="techPicker" class="tech-picker"></div>
-        </div>
-
-        <!-- Abhängigkeiten zu anderen Todos -->
-        <div id="depsSection" class="deps-section">
-          <h3>Abhängigkeiten</h3>
-          <label>Hängt ab von (Voraussetzungen) – Mehrfachauswahl mit Strg/⌘:
-            <select id="f-dependsOn" multiple size="4"></select>
-          </label>
-          <div id="dependentsBox" class="deps-dependents"></div>
-        </div>
-
-        <!-- Kommentare (zeitgestempelt, nach Erstellung hinzufügbar) -->
+        <!-- Kommentare über die volle Breite -->
         <div id="commentsSection" class="comments-section hidden">
           <h3>Kommentare</h3>
           <ul id="commentsList" class="comments-list"></ul>
@@ -122,16 +146,6 @@
             <button id="addCommentBtn" class="btn btn-ghost">+ Kommentar</button>
           </div>
         </div>
-
-        <div id="reminderInfo" class="reminder-info hidden"></div>
-
-        <!-- Verknüpfte Quellen (E-Mails/Nachrichten/Tickets) -->
-        <div id="linksSection" class="links-section hidden">
-          <h3>Verknüpfte Vorgänge</h3>
-          <ul id="linksList" class="links-list"></ul>
-        </div>
-
-        <p class="meta-line">Letzte Aktualisierung: <span id="f-updatedAt">–</span></p>
       </div>
       <div class="modal-foot">
         <button id="deleteBtn" class="btn btn-danger hidden">Löschen</button>

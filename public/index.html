@@ -118,11 +118,15 @@
 
             <!-- Abhängigkeiten zu anderen Todos -->
             <div id="depsSection" class="deps-section">
-              <h3>Abhängigkeiten</h3>
-              <label>Hängt ab von (Voraussetzungen) – Mehrfachauswahl mit Strg/⌘:
-                <select id="f-dependsOn" multiple size="4"></select>
-              </label>
-              <div id="dependentsBox" class="deps-dependents"></div>
+              <h3>Abhängigkeiten
+                <button id="depsEditBtn" class="btn btn-ghost btn-sm" type="button">Bearbeiten</button>
+              </h3>
+              <div id="depsDisplay" class="deps-display"></div>
+              <div id="depsEdit" class="deps-edit hidden">
+                <label>Hängt ab von (Voraussetzungen) – Mehrfachauswahl mit Strg/⌘:
+                  <select id="f-dependsOn" multiple size="5"></select>
+                </label>
+              </div>
             </div>
 
             <div id="reminderInfo" class="reminder-info hidden"></div>
@@ -153,6 +157,21 @@
         <div class="spacer"></div>
         <button id="draftBtn" class="btn btn-ghost hidden">✉ Entwurf</button>
         <button id="saveBtn" class="btn btn-primary">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vorschau eines abhängigen Todos -->
+  <div id="previewModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Vorschau</h2>
+        <button class="icon-btn" data-close-preview>✕</button>
+      </div>
+      <div class="modal-body" id="previewBody"></div>
+      <div class="modal-foot">
+        <div class="spacer"></div>
+        <button id="previewOpenBtn" class="btn btn-primary" type="button">Öffnen ↗</button>
       </div>
     </div>
   </div>

@@ -368,3 +368,12 @@ html, body {
   .modal-grid { grid-template-columns: 1fr; }
   .modal-card.wide { max-width: 560px; }
 }
+
+/* ---- Abhängigkeiten: Anzeige + Vorschau ---- */
+.deps-section h3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.deps-display { display: flex; flex-direction: column; gap: 8px; }
+.deps-group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.deps-group .deps-hint { width: 100%; }
+.preview-h { margin: 0 0 8px; font-size: 17px; }
+.preview-line { font-size: 13px; color: var(--text-dim); margin: 8px 0 0; }
+.preview-notes { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-top: 10px; white-space: pre-wrap; word-break: break-word; }

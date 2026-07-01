@@ -67,7 +67,7 @@ const fmtTime = (d) => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: 
 function buildBoard() {
   const board = $('#board');
   board.innerHTML = '';
-  board.style.setProperty('--cols', lanes.length + 1);
+  board.style.setProperty('--cols', lanes.length);
   for (const lane of lanes) {
     const col = document.createElement('section');
     col.className = 'column';

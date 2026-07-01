@@ -372,10 +372,10 @@ function addChecklistItem() {
   renderChecklist();
 }
 
-// ---- Abhängigkeiten ----
+// ---- Abhängigkeiten (Anzeige- vs. Bearbeitungsmodus) ----
 function renderDeps(t) {
-  const sel = $('#f-dependsOn');
   const dependsOn = t?.dependsOn || [];
+  // Auswahl-Liste (Bearbeitungsmodus) füllen
   const options = todos
     .filter((x) => x.id !== editingId)
     .map((x) => {
@@ -384,15 +384,54 @@ function renderDeps(t) {
       return `<option value="${x.id}" ${dependsOn.includes(x.id) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
     })
     .join('');
-  sel.innerHTML = options || '<option disabled>Keine anderen Todos vorhanden</option>';
+  $('#f-dependsOn').innerHTML = options || '<option disabled>Keine anderen Todos vorhanden</option>';
+  // Standardmäßig Anzeigemodus
+  $('#depsEdit').classList.add('hidden');
+  $('#depsEditBtn').textContent = 'Bearbeiten';
+  renderDepsDisplay(t);
+}
 
-  const box = $('#dependentsBox');
+function depChip(id, title, done) {
+  return `<a class="dep-chip" data-dep="${id}" title="Vorschau">${escapeHtml(title)}${done ? ' ✓' : ''}</a>`;
+}
+function renderDepsDisplay(t) {
+  const box = $('#depsDisplay');
+  const prereq = (t?.dependsOn || []).map((id) => todos.find((x) => x.id === id)).filter(Boolean);
   const dependents = t?.dependents || [];
-  if (!dependents.length) { box.innerHTML = '<span class="deps-hint">Kein anderes Todo hängt von diesem ab.</span>'; return; }
-  box.innerHTML = '<div class="deps-hint">Wird vorausgesetzt von:</div>' + dependents
-    .map((d) => `<a class="dep-chip" data-dep="${d.id}">${escapeHtml(d.title)}${d.done ? ' ✓' : ''}</a>`)
-    .join('');
-  box.querySelectorAll('[data-dep]').forEach((a) => a.addEventListener('click', () => openEdit(a.dataset.dep)));
+  const group = (label, chips) =>
+    `<div class="deps-group"><div class="deps-hint">${label}</div>${chips.length ? chips.join('') : '<span class="deps-hint">–</span>'}</div>`;
+  box.innerHTML =
+    group('Hängt ab von (Voraussetzungen):', prereq.map((x) => depChip(x.id, x.title, x.done))) +
+    group('Wird vorausgesetzt von:', dependents.map((d) => depChip(d.id, d.title, d.done)));
+  box.querySelectorAll('[data-dep]').forEach((a) => a.addEventListener('click', () => openPreview(a.dataset.dep)));
+}
+function toggleDepsEdit() {
+  const hidden = $('#depsEdit').classList.toggle('hidden');
+  $('#depsEditBtn').textContent = hidden ? 'Bearbeiten' : 'Fertig';
+}
+
+// ---- Vorschau eines abhängigen Todos ----
+let previewId = null;
+function openPreview(id) {
+  const t = todos.find((x) => x.id === id);
+  if (!t) return;
+  previewId = id;
+  const lane = laneById(t.category);
+  const prio = { high: 'Hoch', medium: 'Mittel', low: 'Niedrig' }[t.priority];
+  const tags = [`<span class="tag prio-${t.priority}">${prio}</span>`];
+  if (lane) tags.push(`<span class="tag">${escapeHtml(lane.label)}</span>`);
+  tags.push(t.done ? `<span class="tag" style="color:var(--low);border-color:var(--low)">erledigt</span>` : `<span class="tag">offen</span>`);
+  if (t.dueDate) tags.push(`<span class="tag">📅 ${fmtDate(t.dueDate)}</span>`);
+  if (t.reminder) tags.push(`<span class="tag reminder">🔔 ${t.reminder.due ? 'fällig' : 'in ' + t.reminder.daysUntil + ' T'}</span>`);
+  let html = `<h3 class="preview-h">${escapeHtml(t.title)}</h3><div class="card-meta">${tags.join('')}</div>`;
+  if (t.customer) html += `<p class="preview-line">👤 ${escapeHtml(t.customer)}</p>`;
+  if (t.technologies?.length) html += `<div class="tech-display">${t.technologies.map((x) => `<span class="tag tech">🔧 ${escapeHtml(x)}</span>`).join('')}</div>`;
+  if (t.checklist?.length) html += `<p class="preview-line">☑ Checkliste: ${t.checklist.filter((c) => c.checked).length}/${t.checklist.length}</p>`;
+  if (t.notes) html += `<div class="preview-notes">${escapeHtml(t.notes.slice(0, 400))}${t.notes.length > 400 ? '…' : ''}</div>`;
+  if (t.summary?.text) html += `<div class="preview-notes"><strong>Stand:</strong> ${escapeHtml(t.summary.text.slice(0, 300))}</div>`;
+  if (t.dependsOn?.length) html += `<p class="preview-line">⛓ hängt ab von ${t.dependsOn.length} Todo(s)</p>`;
+  $('#previewBody').innerHTML = html;
+  showModal('#previewModal');
 }
 
 // ---- Technologien ----
@@ -757,6 +796,9 @@ function init() {
   $('#draftBtn').addEventListener('click', openDraft);
   $('#genSummaryBtn').addEventListener('click', generateSummary);
   $('#techEditBtn').addEventListener('click', toggleTechEdit);
+  $('#depsEditBtn').addEventListener('click', toggleDepsEdit);
+  $('#previewOpenBtn').addEventListener('click', () => { const id = previewId; closeModal('#previewModal'); if (id) openEdit(id); });
+  document.querySelectorAll('[data-close-preview]').forEach((b) => b.addEventListener('click', () => closeModal('#previewModal')));
   $('#addChecklistBtn').addEventListener('click', addChecklistItem);
   $('#checklistInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addChecklistItem(); } });
   $('#addCommentBtn').addEventListener('click', addComment);

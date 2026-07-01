@@ -356,3 +356,15 @@ html, body {
 .tech-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .tech-row { display: flex; align-items: center; justify-content: space-between; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 14px; }
 .modal-sep { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+
+/* ---- Breiter Todo-Dialog: zwei Spalten + Kommentare unten ---- */
+.modal-card.wide { max-width: 900px; }
+.modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+.modal-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.col-title { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-dim); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin: 0 0 2px; }
+.tech-display { display: flex; flex-wrap: wrap; gap: 6px; }
+.tech-section h3, .summary-section h3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+@media (max-width: 760px) {
+  .modal-grid { grid-template-columns: 1fr; }
+  .modal-card.wide { max-width: 560px; }
+}

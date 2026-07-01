@@ -23,6 +23,7 @@
     </div>
     <div class="topbar-right">
       <button id="toggleDone" class="btn btn-ghost" title="Erledigte ein-/ausblenden">✓ Erledigte</button>
+      <button id="calendarBtn" class="bell" title="Zeiten / Kalender">🗓</button>
       <button id="menuBtn" class="bell" title="Einstellungen & Verbindungstest">⚙</button>
       <button id="reminderBell" class="bell" title="Fällige Reminder">
         🔔<span id="reminderCount" class="badge hidden">0</span>
@@ -36,6 +37,18 @@
   <div id="statusBar" class="status-bar"></div>
 
   <main id="board" class="board"></main>
+
+  <!-- Kalender-/Zeitenansicht -->
+  <main id="calendarView" class="calendar-view hidden">
+    <div class="cal-head">
+      <button id="calPrev" class="btn btn-ghost" type="button" title="Vorherige Woche">‹</button>
+      <button id="calToday" class="btn btn-ghost" type="button">Heute</button>
+      <button id="calNext" class="btn btn-ghost" type="button" title="Nächste Woche">›</button>
+      <span id="calRange" class="cal-range"></span>
+      <span id="calTotal" class="cal-total"></span>
+    </div>
+    <div id="calGrid" class="cal-grid"></div>
+  </main>
 
   <!-- Edit/Create Modal -->
   <div id="modal" class="modal hidden">
@@ -98,6 +111,17 @@
           <!-- Rechte Spalte: Zusatzinformationen -->
           <div class="modal-col">
             <h3 class="col-title">Zusatzinformationen</h3>
+
+            <!-- Zeiterfassung -->
+            <div id="timerSection" class="timer-section hidden">
+              <h3>Zeiterfassung <span id="timerTotal" class="timer-total">Gesamt: 0m</span></h3>
+              <div class="timer-controls">
+                <button id="timerStartBtn" class="btn btn-primary btn-sm" type="button">▶ Start</button>
+                <button id="timerPauseBtn" class="btn btn-ghost btn-sm" type="button">⏸ Pause</button>
+                <button id="timerStopBtn" class="btn btn-ghost btn-sm" type="button">⏹ Stop</button>
+              </div>
+              <div id="timerLive" class="timer-live"></div>
+            </div>
 
             <!-- LLM-Zusammenfassung des aktuellen Stands -->
             <div id="summarySection" class="summary-section hidden">

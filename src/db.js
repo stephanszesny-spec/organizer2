@@ -10,7 +10,7 @@ import { config, DEFAULT_LANES, LANE_FIELDS, DEFAULT_TECHNOLOGIES, DEFAULT_REMIN
  * - Schreibvorgänge werden serialisiert.
  */
 
-const EMPTY = { version: 2, lanes: [], technologies: [], todos: [], meta: { lastSync: null } };
+const EMPTY = { version: 2, lanes: [], technologies: [], todos: [], timeEntries: [], meta: { lastSync: null } };
 
 let state = structuredClone(EMPTY);
 let writeChain = Promise.resolve();
@@ -39,6 +39,7 @@ export async function load() {
     state.lanes = state.lanes.map((l, i) => normalizeLane(l, i));
   }
   if (!Array.isArray(state.technologies)) state.technologies = [...DEFAULT_TECHNOLOGIES];
+  if (!Array.isArray(state.timeEntries)) state.timeEntries = [];
   // Verwaiste Todos (Lane gelöscht) auf erste Lane umhängen
   const laneIds = new Set(state.lanes.map((l) => l.id));
   const fallback = getLanes()[0]?.id;
@@ -132,6 +133,38 @@ export async function reorderLanes(orderedIds) {
   });
   await persist();
   return getLanes();
+}
+
+// ---------------- Zeiterfassung ----------------
+export function getTimeEntriesForTodo(todoId) {
+  return state.timeEntries.filter((e) => e.todoId === todoId);
+}
+export function getRunning() {
+  return state.timeEntries.find((e) => !e.end) || null;
+}
+/** Startet die Zeiterfassung für ein Todo; schließt zuvor jede laufende Erfassung (nur ein Timer gleichzeitig). */
+export async function startTimer(todoId) {
+  const todo = getById(todoId);
+  if (!todo) return null;
+  const nowIso = now();
+  for (const e of state.timeEntries) if (!e.end) e.end = nowIso;
+  state.timeEntries.push({ id: crypto.randomUUID(), todoId, start: nowIso, end: null });
+  await persist();
+  return todo;
+}
+/** Stoppt/pausiert die laufende Erfassung des Todos (schließt das offene Segment). */
+export async function stopTimer(todoId) {
+  const nowIso = now();
+  let changed = false;
+  for (const e of state.timeEntries) if (e.todoId === todoId && !e.end) { e.end = nowIso; changed = true; }
+  if (changed) await persist();
+  return getById(todoId);
+}
+/** Zeitsegmente im Bereich [from, to) (ISO-Strings), nach Startzeit sortiert. */
+export function getTimeEntries(from, to) {
+  return state.timeEntries
+    .filter((e) => (!from || e.start >= from) && (!to || e.start < to))
+    .sort((a, b) => (a.start < b.start ? -1 : 1));
 }
 
 // ---------------- Technologien ----------------
@@ -297,6 +330,8 @@ export async function remove(id) {
   for (const t of state.todos) {
     if (t.dependsOn?.includes(id)) t.dependsOn = t.dependsOn.filter((d) => d !== id);
   }
+  // Zeiterfassungs-Einträge des gelöschten Todos entfernen
+  state.timeEntries = state.timeEntries.filter((e) => e.todoId !== id);
   await persist();
   return true;
 }

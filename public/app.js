@@ -53,6 +53,15 @@ function fmtDate(iso) {
   if (!iso) return null;
   return new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
+function formatDuration(ms) {
+  const totalMin = Math.floor(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h && m) return `${h}h ${m}m`;
+  if (h) return `${h}h`;
+  return `${m}m`;
+}
+const fmtTime = (d) => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 
 // ---------------- Board ----------------
 function buildBoard() {
@@ -133,6 +142,8 @@ function cardHtml(todo) {
     tags.push(`<span class="tag">☑ ${done}/${todo.checklist.length}</span>`);
   }
   if (todo.dependsOn?.length) tags.push(`<span class="tag">⛓ ${todo.dependsOn.length}</span>`);
+  if (todo.tracking?.running) tags.push(`<span class="tag running">⏱ läuft</span>`);
+  else if (todo.tracking?.completedMs > 0) tags.push(`<span class="tag">⏱ ${formatDuration(todo.tracking.completedMs)}</span>`);
   (todo.technologies || []).forEach((t) => tags.push(`<span class="tag tech">🔧 ${escapeHtml(t)}</span>`));
   if (todo.reminder) {
     tags.push(todo.reminder.due ? `<span class="tag reminder">🔔 fällig</span>` : `<span class="tag reminder">🔔 in ${todo.reminder.daysUntil} T</span>`);
@@ -267,6 +278,8 @@ function openCreate(presetCategory) {
   $('#commentsSection').classList.add('hidden');
   $('#summarySection').classList.add('hidden');
   $('#reminderInfo').classList.add('hidden');
+  $('#timerSection').classList.add('hidden');
+  stopTick();
   fillCustomerList();
   applyLaneFields();
   renderChecklist();
@@ -304,6 +317,7 @@ function openEdit(id) {
   renderDeps(t);
   renderTechPicker(t.technologies || []);
   renderLinks(t);
+  renderTimer(t);
   showModal('#modal');
 }
 
@@ -766,9 +780,144 @@ async function loadStatus() {
   } catch { /* still */ }
 }
 
+// ---------------- Zeiterfassung (Timer im Dialog) ----------------
+let editingTracking = null; // {completedMs, running, runningSince}
+let timerInterval = null;
+
+function syncTodo(updated) {
+  const idx = todos.findIndex((x) => x.id === updated.id);
+  if (idx !== -1) todos[idx] = updated;
+}
+function startTick() { stopTick(); timerInterval = setInterval(updateTimerDisplay, 1000); }
+function stopTick() { if (timerInterval) { clearInterval(timerInterval); timerInterval = null; } }
+
+function renderTimer(t) {
+  editingTracking = t.tracking || { completedMs: 0, running: false, runningSince: null };
+  $('#timerSection').classList.remove('hidden');
+  const running = editingTracking.running;
+  $('#timerStartBtn').classList.toggle('hidden', running);
+  $('#timerPauseBtn').classList.toggle('hidden', !running);
+  $('#timerStopBtn').classList.toggle('hidden', !running);
+  updateTimerDisplay();
+  stopTick();
+  if (running) startTick();
+}
+function updateTimerDisplay() {
+  if (!editingTracking) return;
+  if ($('#modal').classList.contains('hidden')) { stopTick(); return; }
+  let ms = editingTracking.completedMs;
+  if (editingTracking.running && editingTracking.runningSince) {
+    ms += Date.now() - new Date(editingTracking.runningSince).getTime();
+  }
+  $('#timerTotal').textContent = 'Gesamt: ' + formatDuration(ms);
+  const live = $('#timerLive');
+  if (editingTracking.running && editingTracking.runningSince) {
+    live.textContent = `⏱ läuft seit ${fmtTime(new Date(editingTracking.runningSince))}`;
+    live.classList.remove('hidden');
+  } else live.classList.add('hidden');
+}
+async function timerStart() {
+  if (!editingId) return;
+  try {
+    const updated = await api(`/api/todos/${editingId}/timer/start`, { method: 'POST' });
+    syncTodo(updated);
+    renderTimer(updated);
+    render();
+  } catch (e) { toast('Timer-Start fehlgeschlagen: ' + e.message, 'err'); }
+}
+async function timerStop() {
+  if (!editingId) return;
+  try {
+    const updated = await api(`/api/todos/${editingId}/timer/stop`, { method: 'POST' });
+    syncTodo(updated);
+    renderTimer(updated);
+    render();
+  } catch (e) { toast('Timer-Stop fehlgeschlagen: ' + e.message, 'err'); }
+}
+
+// ---------------- Kalender-/Zeitenansicht ----------------
+let calMonday = null;
+function mondayOf(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  const day = (x.getDay() + 6) % 7; // Mo=0 … So=6
+  x.setDate(x.getDate() - day);
+  return x;
+}
+function openCalendar() {
+  calMonday = calMonday || mondayOf(new Date());
+  $('#board').classList.add('hidden');
+  $('#calendarView').classList.remove('hidden');
+  $('#calendarBtn').classList.add('active');
+  renderCalendar();
+}
+function closeCalendar() {
+  $('#calendarView').classList.add('hidden');
+  $('#board').classList.remove('hidden');
+  $('#calendarBtn').classList.remove('active');
+}
+function toggleCalendar() {
+  if ($('#calendarView').classList.contains('hidden')) openCalendar();
+  else closeCalendar();
+}
+function calShift(days) {
+  calMonday = new Date(calMonday);
+  calMonday.setDate(calMonday.getDate() + days);
+  renderCalendar();
+}
+async function renderCalendar() {
+  const from = calMonday.toISOString();
+  const endWeek = new Date(calMonday); endWeek.setDate(endWeek.getDate() + 7);
+  const grid = $('#calGrid');
+  const fmtD = (d) => d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+  const lastDay = new Date(calMonday); lastDay.setDate(lastDay.getDate() + 6);
+  $('#calRange').textContent = `${fmtD(calMonday)} – ${fmtD(lastDay)} ${calMonday.getFullYear()}`;
+  let entries = [];
+  try {
+    entries = await api(`/api/time?from=${encodeURIComponent(from)}&to=${encodeURIComponent(endWeek.toISOString())}`);
+  } catch (e) {
+    grid.innerHTML = `<div class="cal-empty">Fehler beim Laden: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  const wd = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  let weekMs = 0;
+  const cols = [];
+  for (let i = 0; i < 7; i++) {
+    const dayStart = new Date(calMonday); dayStart.setDate(dayStart.getDate() + i);
+    const dayEnd = new Date(dayStart); dayEnd.setDate(dayEnd.getDate() + 1);
+    const dayEntries = entries
+      .filter((e) => { const s = new Date(e.start); return s >= dayStart && s < dayEnd; })
+      .sort((a, b) => new Date(a.start) - new Date(b.start));
+    let dayMs = 0;
+    const rows = dayEntries.map((e) => {
+      const start = new Date(e.start);
+      const running = !e.end;
+      const end = running ? new Date() : new Date(e.end);
+      const ms = end - start;
+      dayMs += ms;
+      return `<div class="cal-entry${running ? ' running' : ''}" data-todo="${e.todoId}" title="${escapeHtml(e.title)}">
+          <span class="ce-time">${fmtTime(start)}–${running ? '…' : fmtTime(end)}</span>
+          <span class="ce-title">${escapeHtml(e.title)}</span>
+          <span class="ce-dur">${formatDuration(ms)}${running ? ' ⏱' : ''}</span>
+        </div>`;
+    }).join('');
+    weekMs += dayMs;
+    const isToday = dayStart.getTime() === today.getTime();
+    cols.push(`<div class="cal-day${isToday ? ' today' : ''}">
+        <div class="cal-day-head"><span class="cd-name">${wd[i]}, ${fmtD(dayStart)}</span><span class="cd-total">${dayMs ? formatDuration(dayMs) : ''}</span></div>
+        <div class="cal-day-body">${rows || '<div class="cal-empty">–</div>'}</div>
+      </div>`);
+  }
+  $('#calTotal').textContent = `Woche gesamt: ${formatDuration(weekMs)}`;
+  grid.innerHTML = cols.join('');
+  grid.querySelectorAll('[data-todo]').forEach((el) =>
+    el.addEventListener('click', () => { closeCalendar(); openEdit(el.dataset.todo); }));
+}
+
 // ---------------- helpers / init ----------------
 function showModal(sel) { $(sel).classList.remove('hidden'); }
-function closeModal(sel) { $(sel).classList.add('hidden'); }
+function closeModal(sel) { if (sel === '#modal') stopTick(); $(sel).classList.add('hidden'); }
 
 async function reload() {
   const [laneData, todoData, techData] = await Promise.all([api('/api/lanes'), api('/api/todos'), api('/api/technologies')]);
@@ -795,6 +944,13 @@ function init() {
   $('#toggleDone').classList.toggle('active', showDone);
   $('#draftBtn').addEventListener('click', openDraft);
   $('#genSummaryBtn').addEventListener('click', generateSummary);
+  $('#timerStartBtn').addEventListener('click', timerStart);
+  $('#timerPauseBtn').addEventListener('click', timerStop);
+  $('#timerStopBtn').addEventListener('click', timerStop);
+  $('#calendarBtn').addEventListener('click', toggleCalendar);
+  $('#calPrev').addEventListener('click', () => calShift(-7));
+  $('#calNext').addEventListener('click', () => calShift(7));
+  $('#calToday').addEventListener('click', () => { calMonday = mondayOf(new Date()); renderCalendar(); });
   $('#techEditBtn').addEventListener('click', toggleTechEdit);
   $('#depsEditBtn').addEventListener('click', toggleDepsEdit);
   $('#previewOpenBtn').addEventListener('click', () => { const id = previewId; closeModal('#previewModal'); if (id) openEdit(id); });

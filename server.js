@@ -26,7 +26,13 @@ const wrap = (fn) => (req, res) => fn(req, res).catch((err) => {
 // Todo um abgeleitete Felder anreichern (Reminder-Status, abhängige Todos)
 function decorate(todo) {
   const dependents = db.getDependents(todo.id).map((t) => ({ id: t.id, title: t.title, category: t.category, done: t.done }));
-  return { ...todo, reminder: reminderStatus(todo), dependents };
+  let completedMs = 0;
+  let runningSince = null;
+  for (const e of db.getTimeEntriesForTodo(todo.id)) {
+    if (e.end) completedMs += new Date(e.end) - new Date(e.start);
+    else runningSince = e.start;
+  }
+  return { ...todo, reminder: reminderStatus(todo), dependents, tracking: { completedMs, running: Boolean(runningSince), runningSince } };
 }
 
 const FIELD_LABEL = { dueDate: 'Ziel-Datum', customer: 'Kunde', reminder: 'Reminder-Intervall' };
@@ -159,6 +165,27 @@ app.delete('/api/todos/:id', wrap(async (req, res) => {
   const ok = await db.remove(req.params.id);
   if (!ok) return res.status(404).json({ error: 'Nicht gefunden' });
   res.status(204).end();
+}));
+
+// --- Zeiterfassung ---
+app.post('/api/todos/:id/timer/start', wrap(async (req, res) => {
+  const todo = await db.startTimer(req.params.id);
+  if (!todo) return res.status(404).json({ error: 'Nicht gefunden' });
+  res.json(decorate(todo));
+}));
+app.post('/api/todos/:id/timer/stop', wrap(async (req, res) => {
+  const todo = await db.stopTimer(req.params.id);
+  if (!todo) return res.status(404).json({ error: 'Nicht gefunden' });
+  res.json(decorate(todo));
+}));
+// Zeitsegmente für die Kalenderansicht (angereichert um Task-Titel/Lane)
+app.get('/api/time', wrap(async (req, res) => {
+  const { from, to } = req.query;
+  const entries = db.getTimeEntries(from, to).map((e) => {
+    const t = db.getById(e.todoId);
+    return { ...e, title: t ? t.title : '(gelöschtes Todo)', category: t ? t.category : null };
+  });
+  res.json(entries);
 }));
 
 // --- Erledigt-Status ---
